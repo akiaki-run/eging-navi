@@ -77,7 +77,18 @@ def parse_txt(text):
     return days
 
 
+def ports():
+    """漁港データも一緒に更新する(失敗しても潮位表の更新は続ける)"""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import fetch_ports
+        fetch_ports.main()
+    except Exception as e:  # noqa: BLE001
+        print("漁港データの更新に失敗:", e, file=sys.stderr)
+
+
 def main():
+    ports()
     today = dt.date.today()
     years = [today.year, today.year + 1] if today.month >= 11 else [today.year]
     st = stations(today.year)

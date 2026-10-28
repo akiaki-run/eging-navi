@@ -86,3 +86,5 @@
 - 地図:[地理院タイル](https://maps.gsi.go.jp/development/ichiran.html)
 - 海岸線:国土数値情報(行政区域データ)を加工
 - 地名:Geolonia 住所データ
+- 漁港:国土数値情報(漁港データ)を加工(潮位表と一緒に毎月 `data/tide/ports.json` に取り込み)
+- 港・堤防・波止・釣り場・砂浜:© OpenStreetMap contributors(ページを開いたときに取得)
