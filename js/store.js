@@ -78,7 +78,17 @@ var Store=(function(){
       return u().collection("spots").doc(id).delete(); }
     putLocal("spots",id,null); return Promise.resolve(); }
   function savePos(id,ll){ if(cloudReady()) return u().collection("spotpos").doc(id).set(ll); putLocal("pos",id,ll); return Promise.resolve(); }
-  function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return u().collection("catches").doc(id).set(rec); putLocal("catches",id,rec); return Promise.resolve(); }
+  function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return u().collection("catches").doc(id).set(rec).then(function(){return id;}); putLocal("catches",id,rec); return Promise.resolve(id); }
+  /* 写真:縮めた JPEG を、ログイン時は Firestore の photos に、ログインなしは端末の IndexedDB に入れる */
+  function idb(){ return new Promise(function(ok,ng){ try{ var r=indexedDB.open("en-photos",1); r.onupgradeneeded=function(){ r.result.createObjectStore("p"); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ng(r.error); }; }catch(e){ ng(e); } }); }
+  function savePhoto(id,dataUrl){
+    if(cloudReady()) return u().collection("photos").doc(id).set({img:dataUrl,at:new Date().toISOString()});
+    return idb().then(function(d){ return new Promise(function(ok,ng){ var t=d.transaction("p","readwrite"); t.objectStore("p").put(dataUrl,id); t.oncomplete=function(){ok();}; t.onerror=function(){ng(t.error);}; }); });
+  }
+  function getPhoto(id){
+    if(cloudReady()) return u().collection("photos").doc(id).get().then(function(d){ return d.exists?d.data().img:null; });
+    return idb().then(function(d){ return new Promise(function(ok){ var q=d.transaction("p").objectStore("p").get(id); q.onsuccess=function(){ok(q.result||null);}; q.onerror=function(){ok(null);}; }); }).catch(function(){return null;});
+  }
   function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return u().collection("catches").doc(id).set(patch,{merge:true}); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
   function deleteCatch(id){ if(cloudReady()) return u().collection("catches").doc(id).delete(); putLocal("catches",id,null); return Promise.resolve(); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
@@ -128,7 +138,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();

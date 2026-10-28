@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028p">
+<link rel="stylesheet" href="css/style.css?v=20261028r">
 </head>
 <body>
 <div class="wrap">
@@ -66,6 +66,7 @@
   <div class="src" id="src"></div>
 </section>
 
+<div style="margin:8px 0;text-align:center"><button class="btn pri" type="button" id="nowBtn">🎣 今釣れた!(今いる場所で記録)</button></div>
 <section class="pick" id="pick" aria-live="polite"></section>
 
 <details class="tide fold" id="tideBox">
@@ -86,7 +87,7 @@
 <details class="fold" id="logBox">
   <summary><h2 id="logSum">釣果の記録</h2></summary>
   <div id="logList"></div>
-  <div style="margin:8px 0"><button class="btn pri" type="button" id="pastBtn">＋ 過去の釣果を入れる</button> <span class="src">日時・場所・魚を欄に入れるだけ。その日の風・波・水温・潮は自動で付きます。</span></div>
+    <div style="margin:8px 0"><button class="btn pri" type="button" id="pastBtn">＋ 過去の釣果を入れる</button> <span class="src">日時・場所・魚を欄に入れるだけ。その日の風・波・水温・潮は自動で付きます。</span></div>
   <details class="more" id="impBox"><summary>何件もまとめて文章で入れる</summary>
     <p class="src">1回分を1行で書きます。順番は自由です。日付・時刻(朝・夕方・夜でも可)・場所(港の名前や地名)・魚と数。分かれば投げた向き(南西など)と「港内」か「外海」も。釣れなかった日は「ボウズ」。</p>
     <p class="src">例:<br>2026/9/12 8:30 高浜港 アオリイカ1杯 南西 外海<br>10/12 7:00-10:00 樋合旧港 コウイカ3 港内<br>10/20 夕方 姫戸港 ボウズ</p>
@@ -139,11 +140,13 @@
 </footer>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
+<div class="sheet" id="photoView" hidden style="align-items:center;justify-content:center"><div class="sheetIn" style="text-align:center"><img id="photoImg" alt="釣果の写真" style="max-width:100%;max-height:75vh;border-radius:8px"><div><button class="btn" type="button" id="photoClose">閉じる</button></div></div></div>
 <div class="toast" id="waterAsk" hidden style="bottom:70px">投げた先は? <button class="btn sm pri" type="button" data-water="outer">外海側(港の外・沖)</button> <button class="btn sm pri" type="button" data-water="inner">港内・湾内</button></div>
 <div class="sheet" id="logSheet" hidden role="dialog" aria-labelledby="logTitle">
   <div class="sheetIn">
     <h3 id="logTitle">釣果を記録 <span id="logSpot" class="sub"></span></h3>
     <div class="form">
+      <div class="wide"><button class="btn sm pri" type="button" id="lgHere">📍 今いる場所にする</button> <span class="src" id="lgHereMsg"></span></div>
       <div class="wide" id="lgPlaceRow" hidden><label>場所(港の名前や地名)<input id="lgPlace" maxlength="40" placeholder="例:高浜港、樋合"></label>
         <button class="btn sm" type="button" id="lgPlaceGo">探す</button> <button class="btn sm" type="button" id="lgPlaceMap">地図でタップして選ぶ</button>
         <div id="lgPlaceRes" class="src"></div></div>
@@ -154,6 +157,10 @@
       <label>ルアー・仕掛け<input id="lgTackle" maxlength="40" placeholder="例:エギ3.5号 オレンジ金"></label>
       <label>投げた向き<select id="lgDir"><option value="">—</option></select> <button class="btn sm" type="button" id="lgDirMap">地図で指す</button></label>
       <label>投げた先<select id="lgWater"><option value="">—</option><option value="outer">外海側(港の外・沖)</option><option value="inner">港内・湾内</option></select></label>
+      <div class="wide">写真 <label class="btn sm" style="display:inline-block">📷 撮る<input type="file" id="lgCam" accept="image/*" capture="environment" hidden></label>
+        <label class="btn sm" style="display:inline-block">写真を選ぶ<input type="file" id="lgPick" accept="image/*" hidden></label> <span class="src" id="lgPhotoMsg"></span>
+        <div class="warn" id="lgPhotoWarn" hidden>ログインしていないので、写真はこの端末の中にだけ保存されます。あとでログインして「この端末の記録をアカウントへ移す」を押しても、写真は移りません。スマホとPCの両方で見たいときは、先に右上の「Googleでログイン」をしてください。</div>
+        <div><img id="lgPhotoPrev" alt="" hidden style="max-width:160px;max-height:120px;border-radius:8px;margin-top:4px"></div></div>
       <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
     </div>
@@ -163,10 +170,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028p"></script>
-<script src="js/engine.js?v=20261028p"></script>
-<script src="js/wx.js?v=20261028p"></script>
-<script src="js/store.js?v=20261028p"></script>
-<script src="js/app.js?v=20261028p"></script>
+<script src="firebase-config.js?v=20261028r"></script>
+<script src="js/engine.js?v=20261028r"></script>
+<script src="js/wx.js?v=20261028r"></script>
+<script src="js/store.js?v=20261028r"></script>
+<script src="js/app.js?v=20261028r"></script>
 </body>
 </html>
