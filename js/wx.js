@@ -83,7 +83,7 @@ var Wx=(function(){
     var chunks=[]; for(var i=0;i<need.length;i+=50) chunks.push(need.slice(i,i+50));
     var all=Promise.all(chunks.map(function(ch){
       var la=ch.map(function(k){return k.split(",")[0];}).join(","), lo=ch.map(function(k){return k.split(",")[1];}).join(",");
-      var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=3");
+      var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=3&past_days=3");
       var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height&timezone=Asia%2FTokyo&forecast_days=3").catch(function(){ return null; });
       return Promise.all([f,m]).then(function(r){
         var ws=Array.isArray(r[0])?r[0]:[r[0]], ms=r[1]?(Array.isArray(r[1])?r[1]:[r[1]]):[];
@@ -94,6 +94,14 @@ var Wx=(function(){
     need.forEach(function(k){ cellCache[k]={at:Date.now(),p:all}; });
     return all;
   }
+  /* その時刻より前の雨の合計(24時間・72時間)。真水が入るかどうかの目安 */
+  function rainSum(days,key,hour){
+    if(!days) return null; var d0=new Date(key+"T00:00:00Z"), r24=0, r72=0, got=0;
+    for(var k=1;k<=72;k++){ var t=new Date(d0.getTime()+(hour-k)*36e5), dk=t.toISOString().slice(0,10), h=t.getUTCHours(), dd=days[dk];
+      var v=dd&&dd.rain?dd.rain[h]:null; if(v==null) continue; got++; r72+=v; if(k<=24) r24+=v; }
+    return got>=48?{r24:Math.round(r24),r72:Math.round(r72)}:null;
+  }
+  function rainBefore(lat,lng,key,hour){ return rainSum(cellDays(lat,lng),key,hour); }
   function cellDays(lat,lng){ var c=cellCache[cellKey(lat,lng)]; return c&&c.days?c.days:null; }
-  return {tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
+  return {rainSum:rainSum,rainBefore:rainBefore,tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
 })();

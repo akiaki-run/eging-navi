@@ -172,15 +172,36 @@ function fishHit(list,m){ return (list||[]).some(function(f){ return m.fish.some
  *  ・季節(月)
  *  ・自分の釣果の記録
  * 手で入れた説明(釣り情報サイトの魚の実績・常夜灯など)は表示だけにして、点数には入れない。 */
+/* 狙う魚ごとのシーズンと、場所の向き不向き(釣り方の表に足し引きする)。書いていない魚は釣り方の値を使う */
+var SPECIES={
+  "アオリイカ":{season:[4,5,6,9,10,11,12]},
+  "コウイカ":{season:[1,2,3,4,5,10,11,12],kind:{"港":2,"入り江":3,"砂浜":4,"岬":-3,"瀬戸(水道)":-3,"磯":-2,"磯・海岸":-1}},
+  "ヤリイカ":{season:[12,1,2,3]}, "ケンサキイカ":{season:[5,6,7,8,9]},
+  "アジ":{season:[5,6,7,8,9,10,11,12]}, "メバル":{season:[12,1,2,3,4,5]}, "カサゴ":{season:[1,2,3,4,5,6,7,8,9,10,11,12]},
+  "チヌ":{season:[3,4,5,6,7,8,9,10,11]}, "キス":{season:[5,6,7,8,9,10]}
+};
+function speciesOf(name){ if(!name) return null; var k=Object.keys(SPECIES).filter(function(x){ return name===x||name.indexOf(x)===0||x.indexOf(name.split("(")[0])===0; })[0]; return k?SPECIES[k]:null; }
+/* 狙う魚が決まっていればその魚だけ、決まっていなければ釣り方の対象の魚なら「釣れた」 */
+function targetHit(kind,m,target){ if(!target) return fishHit([kind],m); var a=kind.split("(")[0], b=target.split("(")[0]; return kind===target||a===b||kind.indexOf(b)===0||target.indexOf(a)===0; }
+/* 真水への弱さ(1 = とても弱い。マイナスは雨の濁りがむしろ良い釣り) */
+var FRESH={eging:1,aji:0.3,mebaru:0.3,jig:0.15,kisu:0.4,hata:0.2,negyo:0.2,chinu:-0.6,seabass:-0.6};
+function rainEff(c){ return c.rain72==null?null:(c.rain24||0)+((c.rain72||0)-(c.rain24||0))*0.5; }
+/* 記録からの学習で使う条件の分け方(記録の側と順位の側で同じものを使う) */
+function learnBuckets(c){
+  var e=rainEff(c), t=c.tide_class||c.tide_name||"", ws=c.wind_ms;
+  return {rain:e==null?null:(e<10?"雨なし":(e<30?"少し雨のあと":"大雨のあと")),
+    tide:/大/.test(t)?"大潮":(/中/.test(t)?"中潮":(/小|長|若/.test(t)?"小潮":null)),
+    wind:ws==null?null:(ws<3?"風が弱い":(ws<6?"風がやや強い":"風が強い"))};
+}
 function rankGeneric(c,s,center,radiusKm){
   var m=methodOf(c), why=[], warn=[], geo=classify(s._open);
   var dk=center?distKm(center,s):0, sc=20;
   var k=(s.kind&&s.kind!=="")?spotKind(s):(geo?geo.type:"");
   if(k==="港"&&geo&&geo.type==="瀬戸(水道)") k="瀬戸(水道)";
   var current=geo?geo.current:(s.current||"normal");
-  var kb=m.kind[k]; if(kb==null) kb=0; sc+=kb;
+  var kb=m.kind[k]; if(kb==null) kb=0; var spc=speciesOf(c.target); if(spc&&spc.kind&&spc.kind[k]!=null) kb+=spc.kind[k]; sc+=kb;
   if(m.needSand&&isSandy(s)&&k!=="砂浜"){ sc+=4; why.push("近くに砂地がある"); }
-  if(kb>=5) why.push(k+"は"+m.name+"の好ポイント"); else if(kb<=-2) warn.push(k+"は"+m.name+"にはあまり向かない");
+  if(kb>=5) why.push(k+"は"+(c.target||m.name)+"の好ポイント"); else if(kb<=-2) warn.push(k+"は"+m.name+"にはあまり向かない");
   if(s.log&&s.log.trips){ sc+=Math.min(12,s.log.hits*4)-Math.min(4,s.log.trips-s.log.hits); why.unshift("自分の釣果:"+s.log.trips+"回のうち"+s.log.hits+"回釣れた(計"+s.log.total+m.unit+")"); }
   var ws=c.wind_ms, wdi=DIRS16.indexOf(c.wind_dir), sh=1;
   if(s._open&&wdi>=0){ var fw=s._open[wdi]; sh=fw>=1.5?0:(fw>=0.3?1:2); }
@@ -201,9 +222,23 @@ function rankGeneric(c,s,center,radiusKm){
   } else if(m.tide==="strong"||m.tide==="move"){ if(big){ sc+=(m.tide==="strong"?6:4); why.push(tL+"で潮がよく動く"); } if(small) sc-=2; }
   else if(m.tide==="gentle"){ if(small){ sc+=3; why.push(tL+"で潮が緩く、釣りやすい"); } if(t==="大潮") sc-=1; }
   else if(m.tide==="rising"){ if(big){ sc+=3; why.push(tL+"で満ち込みがはっきりしている"); } }
-  if(m.season.indexOf(c.month)>=0){ sc+=4; why.push(c.month+"月は"+m.name+"のシーズン"); } else { sc-=4; warn.push(c.month+"月はシーズン外で数は期待しにくい"); }
+  var ssn=(spc&&spc.season)||m.season, tn=c.target||m.name;
+  if(ssn.indexOf(c.month)>=0){ sc+=4; why.push(c.month+"月は"+tn+"のシーズン"); } else { sc-=4; warn.push(c.month+"月は"+tn+"のシーズン外で数は期待しにくい"); }
   if(m.rainBonus&&c.rain_max!=null&&c.rain_max>=1&&c.rain_max<5){ sc+=2; why.push("雨で濁りが入りやすい"); }
   if(c.rain_max!=null&&c.rain_max>=5) warn.push("強い雨の時間あり。雨雲を確認");
+  var eff=rainEff(c), fw=FRESH[c.method||"eging"]||0;
+  if(eff!=null&&fw){
+    var rf=c.river_km==null?0.5:(c.river_km<0.5?1:(c.river_km<1.5?0.7:(c.river_km<3?0.4:0.2)));
+    if(geo&&geo.type==="入り江") rf=Math.min(1,rf+0.2); else if(geo&&(geo.type==="岬"||geo.type==="瀬戸(水道)")) rf=Math.max(0.1,rf-0.15);
+    var rtxt="直近の雨(24時間"+(c.rain24||0)+"mm・3日間"+(c.rain72||0)+"mm)", near=c.river_km!=null&&c.river_km<1.5;
+    if(fw>0&&eff>=15){ var pen=Math.round(Math.min(12,(eff-10)/4)*fw*(0.4+0.6*rf)*10)/10; sc-=pen;
+      if(pen>=1) warn.push(rtxt+(near?"。約"+c.river_km+"km先に川があり":"")+"、真水が入って"+(m===METHODS.eging?"イカが離れやすい":"食いが落ちやすい")+(rf<=0.3?"(外海向きなので影響は小さめ)":"")); }
+    else if(fw<0&&eff>=10){ var bo=eff>80?-2:Math.round(Math.min(4,(eff-5)/5)*(-fw)*(0.5+0.5*rf)*10)/10; sc+=bo;
+      if(bo>0) why.push(rtxt+"で濁りが入り、警戒心が薄れやすい"+(near?"(近くに川がある)":"")); else warn.push(rtxt+"。濁りが強すぎる"); }
+  }
+  if(c.learn){ var B=learnBuckets(c);
+    ["rain","tide","wind"].forEach(function(f){ var b=B[f], a=b&&c.learn[f]&&c.learn[f][b]; if(!a||Math.abs(a)<1) return; sc+=a;
+      (a>0?why:warn).push("自分の記録から:"+b+"の日は"+(a>0?"よく釣れている":"釣れにくい")+"("+(a>0?"+":"")+a+")"); }); }
   if(s.ferry) warn.push("フェリーの時刻を確認");
   return {spot:s,score:sc,dist:dk,why:why,warn:warn,kind:k};
 }
@@ -314,4 +349,4 @@ function castAdvice(open,c,spot){
   return {best:best,lo:lo,hi:hi,rel:r,alt:alt,kind:kind(best),text:text};
 }
 
-if(typeof module!=="undefined") module.exports={classify:classify,isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};
+if(typeof module!=="undefined") module.exports={targetHit:targetHit,speciesOf:speciesOf,learnBuckets:learnBuckets,rainEff:rainEff,classify:classify,isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};

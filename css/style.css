@@ -214,3 +214,4 @@ body.recOpen{overflow:hidden}
 #tripInfo{font-weight:600;margin-bottom:6px}
 .triprow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.9rem}
 .triprow .zero{color:var(--sub)}
+#target{font:inherit;font-size:1rem;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);margin-left:4px}
