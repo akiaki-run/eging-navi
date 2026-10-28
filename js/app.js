@@ -439,6 +439,7 @@ function useHere(){
     setPicked(near?{name:near.name,lat:ll.lat,lng:ll.lng,id:near.id||null,known:true,match:near.name}:{name:townShort(ll).short||"今いた場所",lat:ll.lat,lng:ll.lng,id:null,known:false});
     document.getElementById("logSpot").textContent=logFree.picked.name;
     m.textContent="今いる場所にしました(誤差 約"+acc+"m)。";
+    var at=activeTrip(); if(at&&at.lat!=null){ var dd=distKm(at,ll); if(dd>0.8) m.textContent+=" 釣り開始の場所("+at.name+")から約"+dd.toFixed(1)+"km離れています。場所を変えたなら、次からは離れるときに「移動する」を押してください。"; }
   },function(e){ m.textContent=e.code===1?"位置情報が許可されていません。ブラウザの設定で、このサイトの位置情報を「許可」にしてください。":"位置を取れませんでした。もう一度押してください。"; },{enableHighAccuracy:true,timeout:20000,maximumAge:60000});
 }
 function openNow(){ openPast(); document.getElementById("lgAt").value=localInputNow(); document.getElementById("logSpot").textContent="(今の釣果)"; useHere(); }
@@ -490,43 +491,54 @@ function setActiveTrip(t){ if(t) t.synced=false; setLocalTrip(t); var c=t?Object
 function onCloudTrip(v){ if(v===undefined) return; var loc=activeTrip();
   if(v){ if(!loc||loc.id!==v.id||!loc.synced) setLocalTrip(Object.assign({},v,{synced:true})); }
   else if(loc){ if(loc.synced) setLocalTrip(null); else { var c=Object.assign({},loc); delete c.synced; Store.saveActiveTrip(c).catch(function(){}); } } }
+var MOVE_KEY="en.moving";
+function moving(){ try{ return JSON.parse(localStorage.getItem(MOVE_KEY)); }catch(e){ return null; } }
+function setMoving(v){ try{ if(v) localStorage.setItem(MOVE_KEY,JSON.stringify(v)); else localStorage.removeItem(MOVE_KEY); }catch(e){} renderTripBar(); }
 function fmtDur(ms){ var m=Math.round(ms/60000); return (m>=60?Math.floor(m/60)+"時間":"")+(m%60)+"分"; }
 function tripCatches(id){ return state.catches.filter(function(x){ return x.trip_id===id; }); }
 function renderTripBar(){
-  var t=activeTrip(), on=!!t; document.getElementById("tripIdle").hidden=on; document.getElementById("tripOn").hidden=!on; if(!on) return;
+  var t=activeTrip(), on=!!t, mv=!on&&moving();
+  if(mv&&Date.now()-new Date(mv.since).getTime()>12*36e5){ mv=null; try{ localStorage.removeItem(MOVE_KEY); }catch(e){} }
+  document.getElementById("tripIdle").hidden=on||!!mv; document.getElementById("tripOn").hidden=!on; document.getElementById("tripMoving").hidden=!mv;
+  if(mv) document.getElementById("movingInfo").textContent="移動中:"+mv.from+"を"+fmtAt(mv.since).split(" ")[1]+"に出発("+fmtDur(Date.now()-new Date(mv.since).getTime())+")";
+  if(!on) return;
   var n=0; tripCatches(t.id).forEach(function(x){ recItems(x).forEach(function(it){ n+=it.count; }); });
   document.getElementById("tripInfo").textContent="釣り中:"+(t.name||"場所を確認中")+" "+fmtAt(t.start).split(" ")[1]+"〜("+fmtDur(Date.now()-new Date(t.start).getTime())+") 釣果"+n;
 }
 function hereNow(){ return new Promise(function(ok,ng){ if(!navigator.geolocation) return ng(new Error("no")); navigator.geolocation.getCurrentPosition(function(p){ ok({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}); },ng,{enableHighAccuracy:true,timeout:20000,maximumAge:60000}); }); }
 function placeAt(ll){ var near=placeCands().filter(function(x){return distKm(x,ll)<0.2;}).sort(function(a,b){return distKm(ll,a)-distKm(ll,b);})[0];
   return near?{spot_id:near.id||("port_"+normPlace(near.name)),name:near.name}:{spot_id:null,name:townShort(ll).short||"今いた場所"}; }
-function startTrip(){
-  var msg=document.getElementById("tripMsg"); msg.textContent="今いる場所を調べています…";
-  var t={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),start:new Date().toISOString(),method:state.method};
-  hereNow().then(function(ll){ t.lat=ll.lat; t.lng=ll.lng; var pa=placeAt(ll); t.spot_id=pa.spot_id; t.name=pa.name; setActiveTrip(t); msg.textContent="釣りを始めました。釣れたら「釣れた!」を押してください。"; })
+function startTrip(opt){
+  opt=opt||{}; var msg=document.getElementById("tripMsg"); if(!opt.prev) msg.textContent="今いる場所を調べています…";
+  var t={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),start:new Date().toISOString(),method:state.method}; t.outing=opt.outing||t.id;
+  hereNow().then(function(ll){ t.lat=ll.lat; t.lng=ll.lng; var pa=placeAt(ll); t.spot_id=pa.spot_id; t.name=pa.name; setActiveTrip(t);
+    msg.textContent=opt.resume?t.name+"で続きを始めました。":"釣りを始めました。釣れたら「釣れた!」を押してください。"; })
     .catch(function(){ setActiveTrip(t); msg.textContent="位置が取れなかったので、地図で釣り場をタップしてください。"; state.castEdit={phase:"tripPlace"}; document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"}); });
 }
-function endTrip(){
-  var t=activeTrip(); if(!t) return; var msg=document.getElementById("tripMsg");
+function endTrip(next){
+  var t=activeTrip(); if(!t) return Promise.resolve(); var msg=document.getElementById("tripMsg");
   var end=new Date(), forgot=false; if(end-new Date(t.start)>12*36e5){ end=new Date(new Date(t.start).getTime()+3*36e5); forgot=true; }
   var cs=tripCatches(t.id), hits=0, total=0, fish={}; cs.forEach(function(x){ var its=recItems(x); if(its.length) hits++; its.forEach(function(it){ total+=it.count; fish[it.kind]=(fish[it.kind]||0)+it.count; }); });
   var tsp=t.spot_id&&allSpots().filter(function(x){return x.id===t.spot_id;})[0];
-  var rec={spot_kind:tsp?kindOf(tsp):null,id:t.id,start:t.start,end:end.toISOString(),method:t.method,lat:t.lat,lng:t.lng,spot_id:t.spot_id,spot_name:t.name,catches:cs.length,total:total,fish:fish,memo:forgot?"終了を押し忘れたため3時間とした":"",createdAt:new Date().toISOString()};
+  var rec={outing:t.outing||t.id,spot_kind:tsp?kindOf(tsp):null,id:t.id,start:t.start,end:end.toISOString(),method:t.method,lat:t.lat,lng:t.lng,spot_id:t.spot_id,spot_name:t.name,catches:cs.length,total:total,fish:fish,memo:forgot?"終了を押し忘れたため3時間とした":"",createdAt:new Date().toISOString()};
   msg.textContent="記録しています…";
   var mid=new Date((new Date(t.start).getTime()+end.getTime())/2).toISOString();
   var pc=(t.lat!=null)?pastCond({lat:t.lat,lng:t.lng,at:mid}).catch(function(){return null;}):Promise.resolve(null);
   var chain=Promise.resolve();
   if(t.lat!=null&&!t.spot_id){ var sid="imp_"+normPlace(t.name).replace(/[^\w぀-鿿]/g,"")+"_"+t.id.slice(-4); rec.spot_id=sid; chain=Store.saveSpot(sid,{name:t.name,note:"",lat:t.lat,lng:t.lng,createdAt:new Date().toISOString(),from_import:true}); }
-  chain.then(function(){ return pc; }).then(function(c){ if(c) rec.cond=c; return Store.addTrip(rec); }).then(function(){
-    setActiveTrip(null); msg.textContent="釣行を記録しました:"+fmtDur(end-new Date(t.start))+"・"+(total?"釣果"+total+"("+fishSummary(fish)+")":"ボウズ")+(forgot?"(終了の押し忘れとして3時間にしました。記録を見るで確認できます)":""); })
-    .catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度「釣り終了」を押してください。"; });
+  return chain.then(function(){ return Promise.race([pc,new Promise(function(ok){ setTimeout(function(){ok(null);},15000); })]); }).then(function(c){ if(c) rec.cond=c; return Store.addTrip(rec); }).then(function(){
+    var done=t.name+":"+fmtDur(end-new Date(t.start))+"・"+(total?"釣果"+total+"("+fishSummary(fish)+")":"ボウズ");
+    setActiveTrip(null);
+    if(next){ setMoving({outing:t.outing||t.id,from:t.name,since:end.toISOString()}); msg.textContent="「"+done+"」を記録しました。次の釣り場に着いたら「ここで再開」を押してください。移動の時間は記録に入りません。"; return; }
+    msg.textContent="釣行を記録しました:"+done+(forgot?"(終了の押し忘れとして3時間にしました。記録を見るで確認できます)":""); })
+    .catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; });
 }
 function renderTrips(){
   var el=document.getElementById("tripList"); if(!el) return;
   var ts=(state.trips||[]).slice().sort(function(a,b){ return (b.start||"")>(a.start||"")?1:-1; });
   if(!ts.length){ el.innerHTML='<div class="src">まだありません。釣り場で「釣り開始」を押すと、ここに残ります。</div>'; return; }
   el.innerHTML=ts.map(function(t){ var cd=t.cond||{}, c=[cd.weather,cd.wind_dir?cd.wind_dir+" "+(cd.wind_ms!=null?cd.wind_ms+"m":""):"",cd.tide_name,cd.sst_c!=null?"水温"+cd.sst_c+"℃":""].filter(Boolean).join("・");
-    return '<div class="triprow"><div class="num">'+fmtAt(t.start)+'〜'+fmtAt(t.end).split(" ")[1]+'</div><div><b>'+esc(t.spot_name||"")+'</b> '+fmtDur(new Date(t.end)-new Date(t.start))+' '+(t.total?'<span>釣果'+t.total+'('+esc(fishSummary(t.fish))+')</span>':'<span class="zero">ボウズ</span>')+(c?'<br><small>'+esc(c)+'</small>':'')+(t.memo?'<br><small>'+esc(t.memo)+'</small>':'')+'</div><button class="btn sm" data-trdel="'+esc(t.id)+'">削除</button></div>'; }).join("");
+    return '<div class="triprow"><div class="num">'+fmtAt(t.start)+'〜'+fmtAt(t.end).split(" ")[1]+'</div><div><b>'+esc(t.spot_name||"")+'</b>'+(t.outing&&t.outing!==t.id?' <small>(移動して続き)</small>':'')+' '+fmtDur(new Date(t.end)-new Date(t.start))+' '+(t.total?'<span>釣果'+t.total+'('+esc(fishSummary(t.fish))+')</span>':'<span class="zero">ボウズ</span>')+(c?'<br><small>'+esc(c)+'</small>':'')+(t.memo?'<br><small>'+esc(t.memo)+'</small>':'')+'</div><button class="btn sm" data-trdel="'+esc(t.id)+'">削除</button></div>'; }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-trdel]"),function(b){ b.onclick=function(){ if(b.dataset.armed){ Store.deleteTrip(b.dataset.trdel).catch(function(){}); } else { b.dataset.armed="1"; b.textContent="もう一度押すと削除"; } }; });
 }
 function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
@@ -1257,7 +1269,10 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("nowBtn").onclick=openNow;
   document.getElementById("nowBtn2").onclick=openNow;
   document.getElementById("tripStart").onclick=startTrip;
-  document.getElementById("tripEnd").onclick=endTrip;
+  document.getElementById("tripEnd").onclick=function(){ endTrip(false); };
+  document.getElementById("tripMove").onclick=function(){ endTrip(true); };
+  document.getElementById("tripResume").onclick=function(){ var mv=moving(); setMoving(null); startTrip({outing:mv&&mv.outing,resume:true}); };
+  document.getElementById("tripMoveEnd").onclick=function(){ setMoving(null); document.getElementById("tripMsg").textContent="今日の釣りを終えました。"; };
   document.getElementById("tripCancel").onclick=function(){ var b=this; if(b.dataset.armed){ setActiveTrip(null); b.dataset.armed=""; b.textContent="取り消す"; document.getElementById("tripMsg").textContent="釣り開始を取り消しました(記録は残りません)。"; } else { b.dataset.armed="1"; b.textContent="もう一度押すと取り消し"; } };
   renderTripBar(); setInterval(renderTripBar,60000);
   Store.on("activeTrip",onCloudTrip);
