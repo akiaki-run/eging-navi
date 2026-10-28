@@ -4,7 +4,7 @@
  * どちらも同じ関数で扱えるようにしている。 */
 var Store=(function(){
   var subs={}, mode="local", uid=null, userName="", fb=null, db=null, unsubs=[], groupUnsubs={};
-  var data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
+  var data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{},activeTrip:undefined};
   function emit(k){ (subs[k]||[]).forEach(function(f){ try{ f(get(k)); }catch(e){ console.error(e); } }); }
   function get(k){
     if(k==="spots"||k==="catches"||k==="trips") return Object.keys(data[k]).map(function(id){return Object.assign({id:id},data[k][id]);});
@@ -20,6 +20,9 @@ var Store=(function(){
   }
   function newId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }
+  /* クラウドへの書き込み:電波が無いと完了の返事が来ないので、少し待って返事が無ければ「端末にためた」として先へ進む */
+  function fw(p,val){ var done=false; p.then(function(){done=true;},function(e){ console.warn("書き込みに失敗",e); });
+    return Promise.race([p.then(function(){return val;}),new Promise(function(ok){ setTimeout(function(){ if(!done) ok(val); },2500); })]); }
 
   /* --- Firebase --- */
   function loadScript(src){ return new Promise(function(ok,ng){ var s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=ng; document.head.appendChild(s); }); }
@@ -32,7 +35,7 @@ var Store=(function(){
     ["spots","catches","trips","pos","groups","groupSpots"].forEach(emit);
     function col(name,key){ unsubs.push(u().collection(name).onSnapshot(function(q){ var m={}; q.forEach(function(d){ m[d.id]=d.data(); }); data[key]=m; emit(key); },function(e){ console.warn(e); })); }
     col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos");
-    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; emit("area"); emit("groups"); watchGroups(); },function(e){ console.warn(e); }));
+    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ console.warn(e); }));
     emit("auth");
   }
   function stopCloud(){
@@ -56,6 +59,8 @@ var Store=(function(){
     return loadScript(base+"firebase-app-compat.js").then(function(){ return Promise.all([loadScript(base+"firebase-auth-compat.js"),loadScript(base+"firebase-firestore-compat.js")]); })
       .then(function(){
         fb=firebase.initializeApp(cfg); db=firebase.firestore();
+        /* 電波が無くても書き込みを端末にため、つながったら自動で送る */
+        try{ db.enablePersistence({synchronizeTabs:true}).catch(function(e){ console.warn("端末への保存を使えません",e); }); }catch(e){}
         firebase.auth().onAuthStateChanged(function(user){ if(user) startCloud(user); else if(mode==="cloud") stopCloud(); else emit("auth"); });
         firebase.auth().getRedirectResult().catch(function(){});
         return true;
@@ -72,27 +77,28 @@ var Store=(function(){
 
   /* --- 書き込み(ローカル/クラウド共通) --- */
   function putLocal(k,id,v){ if(v==null) delete data[k][id]; else data[k][id]=v; lsSet(k,data[k]); emit(k); }
-  function saveSpot(id,obj){ obj=clean(obj); if(cloudReady()) return u().collection("spots").doc(id).set(obj); putLocal("spots",id,obj); return Promise.resolve(); }
+  function saveSpot(id,obj){ obj=clean(obj); if(cloudReady()) return fw(u().collection("spots").doc(id).set(obj)); putLocal("spots",id,obj); return Promise.resolve(); }
   function deleteSpot(id){
     if(cloudReady()){ data.groups.forEach(function(g){ db.collection("groups").doc(g.code).collection("spots").doc(uid+"_"+id).delete().catch(function(){}); });
       return u().collection("spots").doc(id).delete(); }
     putLocal("spots",id,null); return Promise.resolve(); }
-  function savePos(id,ll){ if(cloudReady()) return u().collection("spotpos").doc(id).set(ll); putLocal("pos",id,ll); return Promise.resolve(); }
-  function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return u().collection("catches").doc(id).set(rec).then(function(){return id;}); putLocal("catches",id,rec); return Promise.resolve(id); }
+  function savePos(id,ll){ if(cloudReady()) return fw(u().collection("spotpos").doc(id).set(ll)); putLocal("pos",id,ll); return Promise.resolve(); }
+  function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return fw(u().collection("catches").doc(id).set(rec),id); putLocal("catches",id,rec); return Promise.resolve(id); }
   /* 写真:縮めた JPEG を、ログイン時は Firestore の photos に、ログインなしは端末の IndexedDB に入れる */
   function idb(){ return new Promise(function(ok,ng){ try{ var r=indexedDB.open("en-photos",1); r.onupgradeneeded=function(){ r.result.createObjectStore("p"); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ng(r.error); }; }catch(e){ ng(e); } }); }
   function savePhoto(id,dataUrl){
-    if(cloudReady()) return u().collection("photos").doc(id).set({img:dataUrl,at:new Date().toISOString()});
+    if(cloudReady()) return fw(u().collection("photos").doc(id).set({img:dataUrl,at:new Date().toISOString()}));
     return idb().then(function(d){ return new Promise(function(ok,ng){ var t=d.transaction("p","readwrite"); t.objectStore("p").put(dataUrl,id); t.oncomplete=function(){ok();}; t.onerror=function(){ng(t.error);}; }); });
   }
   function getPhoto(id){
     if(cloudReady()) return u().collection("photos").doc(id).get().then(function(d){ return d.exists?d.data().img:null; });
     return idb().then(function(d){ return new Promise(function(ok){ var q=d.transaction("p").objectStore("p").get(id); q.onsuccess=function(){ok(q.result||null);}; q.onerror=function(){ok(null);}; }); }).catch(function(){return null;});
   }
-  function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return u().collection("catches").doc(id).set(patch,{merge:true}); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
-  function addTrip(rec){ rec=clean(rec); var id=rec.id||newId(); delete rec.id; if(cloudReady()) return u().collection("trips").doc(id).set(rec).then(function(){return id;}); putLocal("trips",id,rec); return Promise.resolve(id); }
-  function deleteTrip(id){ if(cloudReady()) return u().collection("trips").doc(id).delete(); putLocal("trips",id,null); return Promise.resolve(); }
-  function deleteCatch(id){ if(cloudReady()) return u().collection("catches").doc(id).delete(); putLocal("catches",id,null); return Promise.resolve(); }
+  function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return fw(u().collection("catches").doc(id).set(patch,{merge:true})); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
+  function addTrip(rec){ rec=clean(rec); var id=rec.id||newId(); delete rec.id; if(cloudReady()) return fw(u().collection("trips").doc(id).set(rec),id); putLocal("trips",id,rec); return Promise.resolve(id); }
+  function deleteTrip(id){ if(cloudReady()) return fw(u().collection("trips").doc(id).delete()); putLocal("trips",id,null); return Promise.resolve(); }
+  function deleteCatch(id){ if(cloudReady()) return fw(u().collection("catches").doc(id).delete()); putLocal("catches",id,null); return Promise.resolve(); }
+  function saveActiveTrip(t){ if(cloudReady()) return fw(u().set({activeTrip:t||null},{merge:true})); return Promise.resolve(); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
 
   /* --- 端末の記録をアカウントへ移す --- */
@@ -105,7 +111,14 @@ var Store=(function(){
     Object.keys(c).forEach(function(id){ b.set(u().collection("catches").doc(id),c[id]); n++; });
     Object.keys(p).forEach(function(id){ b.set(u().collection("spotpos").doc(id),p[id]); n++; });
     if(n>450) return Promise.reject(new Error("件数が多すぎます"));
-    return b.commit().then(function(){ ["spots","catches","trips","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return n; });
+    return b.commit().then(function(){ ["spots","catches","trips","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return migratePhotos(); }).then(function(){ return n; });
+  }
+  function migratePhotos(){
+    return idb().then(function(d){ return new Promise(function(ok){ var st=d.transaction("p").objectStore("p"), ks=st.getAllKeys(), vs=st.getAll();
+      vs.onsuccess=function(){ ok({d:d,keys:ks.result||[],vals:vs.result||[]}); }; vs.onerror=function(){ ok(null); }; }); })
+    .then(function(r){ if(!r||!r.keys.length) return;
+      return Promise.all(r.keys.map(function(k,i){ return fw(u().collection("photos").doc(String(k)).set({img:r.vals[i],at:new Date().toISOString()})); }))
+        .then(function(){ var t=r.d.transaction("p","readwrite"); t.objectStore("p").clear(); }); }).catch(function(e){ console.warn("写真を移せませんでした",e); });
   }
 
   /* --- 仲間グループ --- */
@@ -141,7 +154,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();

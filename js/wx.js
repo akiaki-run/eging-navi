@@ -72,7 +72,8 @@ var Wx=(function(){
     w.hourly.time.forEach(function(t,i){ var d=t.slice(0,10), h=+t.slice(11,13);
       var o=days[d]=days[d]||{speed:[],dir:[],gust:[],rain:[],code:[],wave:[]};
       o.speed[h]=w.hourly.wind_speed_10m[i]; o.dir[h]=w.hourly.wind_direction_10m[i]; o.gust[h]=w.hourly.wind_gusts_10m[i]; o.rain[h]=w.hourly.precipitation[i]; o.code[h]=w.hourly.weather_code[i]; });
-    if(mar&&mar.hourly&&mar.hourly.wave_height){ mar.hourly.time.forEach(function(t,i){ var d=t.slice(0,10); if(days[d]) days[d].wave[+t.slice(11,13)]=mar.hourly.wave_height[i]; }); }
+    if(mar&&mar.hourly&&mar.hourly.wave_height){ mar.hourly.time.forEach(function(t,i){ var d=t.slice(0,10), h=+t.slice(11,13); if(!days[d]) return; days[d].wave[h]=mar.hourly.wave_height[i];
+      if(mar.hourly.sea_surface_temperature){ (days[d].sst=days[d].sst||[])[h]=mar.hourly.sea_surface_temperature[i]; } }); }
     return days;
   }
   function forecastCells(points){
@@ -84,7 +85,7 @@ var Wx=(function(){
     var all=Promise.all(chunks.map(function(ch){
       var la=ch.map(function(k){return k.split(",")[0];}).join(","), lo=ch.map(function(k){return k.split(",")[1];}).join(",");
       var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=3&past_days=3");
-      var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height&timezone=Asia%2FTokyo&forecast_days=3").catch(function(){ return null; });
+      var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height,sea_surface_temperature&timezone=Asia%2FTokyo&forecast_days=3&past_days=3").catch(function(){ return null; });
       return Promise.all([f,m]).then(function(r){
         var ws=Array.isArray(r[0])?r[0]:[r[0]], ms=r[1]?(Array.isArray(r[1])?r[1]:[r[1]]):[];
         ch.forEach(function(k,i){ if(ws[i]&&ws[i].hourly) cellCache[k]={at:Date.now(),days:parseOne(ws[i],ms[i])}; });
@@ -101,7 +102,15 @@ var Wx=(function(){
       var v=dd&&dd.rain?dd.rain[h]:null; if(v==null) continue; got++; r72+=v; if(k<=24) r24+=v; }
     return got>=48?{r24:Math.round(r24),r72:Math.round(r72)}:null;
   }
+  /* 前の48時間でいちばん強かった風と高かった波(時化のあとかどうか) */
+  function roughBefore(days,key,hour){
+    if(!days) return null; var d0=new Date(key+"T00:00:00Z"), w=null, g=null;
+    for(var k=6;k<=48;k++){ var t=new Date(d0.getTime()+(hour-k)*36e5), dd=days[t.toISOString().slice(0,10)], h=t.getUTCHours(); if(!dd) continue;
+      if(dd.speed&&dd.speed[h]!=null) w=Math.max(w||0,dd.speed[h]); if(dd.wave&&dd.wave[h]!=null) g=Math.max(g||0,dd.wave[h]); }
+    return w==null?null:{wind:Math.round(w*10)/10,wave:g==null?null:Math.round(g*10)/10};
+  }
+  function sstAt(days,key,hour){ var dd=days&&days[key]; if(!dd||!dd.sst) return null; for(var k=0;k<6;k++){ var v=dd.sst[Math.max(0,Math.min(23,hour-k))]; if(v!=null) return Math.round(v*10)/10; } return null; }
   function rainBefore(lat,lng,key,hour){ return rainSum(cellDays(lat,lng),key,hour); }
   function cellDays(lat,lng){ var c=cellCache[cellKey(lat,lng)]; return c&&c.days?c.days:null; }
-  return {rainSum:rainSum,rainBefore:rainBefore,tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
+  return {roughBefore:roughBefore,sstAt:sstAt,rainSum:rainSum,rainBefore:rainBefore,tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
 })();
