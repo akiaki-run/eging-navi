@@ -62,15 +62,19 @@ var Store=(function(){
         /* 電波が無くても書き込みを端末にため、つながったら自動で送る */
         try{ db.enablePersistence({synchronizeTabs:true}).catch(function(e){ console.warn("端末への保存を使えません",e); }); }catch(e){}
         firebase.auth().onAuthStateChanged(function(user){ if(user) startCloud(user); else if(mode==="cloud") stopCloud(); else emit("auth"); });
-        firebase.auth().getRedirectResult().catch(function(){});
+        firebase.auth().getRedirectResult().catch(function(e){ console.warn("前のログインの続きは使いません",e); });
         return true;
       }).catch(function(e){ console.warn("Firebase を読み込めません",e); emit("auth"); return false; });
   }
   function signIn(){
     if(!fb) return Promise.reject(new Error("ログインの設定がまだです"));
     var p=new firebase.auth.GoogleAuthProvider();
+    /* 画面を移るログイン(redirect)は、Safari などで「missing initial state」になって失敗するので使わない */
     return firebase.auth().signInWithPopup(p).catch(function(e){
-      if(e&&(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment")) return firebase.auth().signInWithRedirect(p);
+      var c=e&&e.code||"";
+      if(c==="auth/popup-blocked") throw new Error("ログイン用の小さな画面が開けませんでした。ブラウザの設定で、このサイトのポップアップを許可してから、もう一度押してください。");
+      if(c==="auth/operation-not-supported-in-this-environment"||c==="auth/web-storage-unsupported") throw new Error("この開き方ではログインできません。Safari か Chrome でサイトを直接開いてください。");
+      if(c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request") throw new Error("ログインの画面が閉じられました。もう一度押してください。");
       throw e; });
   }
   function signOut(){ return fb?firebase.auth().signOut():Promise.resolve(); }
@@ -106,9 +110,12 @@ var Store=(function(){
   function migrateLocal(){
     if(!cloudReady()) return Promise.reject(new Error("ログインしていません"));
     var s=lsGet("spots",{}), c=lsGet("catches",{}), tr=lsGet("trips",{}), p=lsGet("pos",{}), b=db.batch(), n=0;
-    Object.keys(tr).forEach(function(id){ b.set(u().collection("trips").doc(id),tr[id]); n++; });
-    Object.keys(s).forEach(function(id){ b.set(u().collection("spots").doc(id),s[id]); n++; });
-    Object.keys(c).forEach(function(id){ b.set(u().collection("catches").doc(id),c[id]); n++; });
+    Object.keys(tr).forEach(function(id){ if(data.trips[id]) return; b.set(u().collection("trips").doc(id),tr[id]); n++; });
+    Object.keys(s).forEach(function(id){ if(data.spots[id]) return; b.set(u().collection("spots").doc(id),s[id]); n++; });
+    /* アカウント側にすでに同じ記録(同じ日時・場所・魚)があればとばす */
+    var sig=function(x){ return x.imp||((x.at||"")+"|"+(x.spot_name||"")+"|"+(x.items||[]).map(function(i){return i.kind+i.count;}).join(",")); }, have={};
+    Object.keys(data.catches).forEach(function(id){ have[sig(data.catches[id])]=1; });
+    Object.keys(c).forEach(function(id){ if(data.catches[id]||have[sig(c[id])]) return; have[sig(c[id])]=1; b.set(u().collection("catches").doc(id),c[id]); n++; });
     Object.keys(p).forEach(function(id){ b.set(u().collection("spotpos").doc(id),p[id]); n++; });
     if(n>450) return Promise.reject(new Error("件数が多すぎます"));
     return b.commit().then(function(){ ["spots","catches","trips","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return migratePhotos(); }).then(function(){ return n; });

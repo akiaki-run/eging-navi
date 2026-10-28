@@ -1168,10 +1168,13 @@ function renderAuth(){
     var lc=Store.localCounts(), mig=(lc.spots+lc.catches)>0;
     el.innerHTML='<span class="src">'+esc(Store.userName||"ログイン中")+'</span>'+(mig?'<button class="btn sm pri" id="migBtn">この端末の記録('+(lc.spots+lc.catches)+'件)をアカウントへ移す</button>':'')+'<button class="btn sm" id="outBtn">ログアウト</button>';
     document.getElementById("outBtn").onclick=function(){ Store.signOut(); };
-    if(mig) document.getElementById("migBtn").onclick=function(){ Store.migrateLocal().then(function(n){ alertMsg(n+"件をアカウントに移しました。"); renderAuth(); }).catch(function(e){ alertMsg("移せませんでした:"+(e&&e.message||e)); }); };
+    if(mig) document.getElementById("migBtn").onclick=function(){ Store.migrateLocal().then(function(n){ alertMsg(n+"件をアカウントに移しました(アカウントにすでにある同じ記録はとばしました)。"); renderAuth(); }).catch(function(e){ alertMsg("移せませんでした:"+(e&&e.message||e)); }); };
   } else {
     el.innerHTML='<button class="btn sm pri" id="inBtn">Googleでログイン</button>';
-    document.getElementById("inBtn").onclick=function(){ Store.signIn().catch(function(e){ alertMsg("ログインできませんでした:"+(e&&e.message||e)); }); };
+    document.getElementById("inBtn").onclick=function(){
+      var ua=navigator.userAgent||"", inApp=/Line\/|FBAN|FBAV|Instagram|Twitter|MicroMessenger/i.test(ua), standalone=window.navigator.standalone===true||(window.matchMedia&&matchMedia("(display-mode: standalone)").matches);
+      if(inApp){ alertMsg("LINE などのアプリの中のブラウザではログインできません。右上のメニューから「Safariで開く」(または「ブラウザで開く」)を選んでください。",10000); return; }
+      Store.signIn().catch(function(e){ alertMsg((e&&e.message||String(e))+(standalone?" ホーム画面のアイコンから開いているときにうまくいかない場合は、Safari で直接開いてログインしてください。":""),10000); }); };
   }
 }
 
