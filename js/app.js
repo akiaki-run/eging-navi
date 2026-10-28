@@ -260,16 +260,6 @@ function loadTowns(code){ if(towns[code])return Promise.resolve(towns[code]); if
   townLoading[code]=fetch("data/land/t"+code+".json").then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(a){towns[code]=a;return a;}).catch(function(){delete townLoading[code];return null;});
   return townLoading[code]; }
 function nearestTown(p){ var best=null,bd=4; Object.keys(towns).forEach(function(k){ (towns[k]||[]).forEach(function(t){ if(Math.abs(t[1]-p.lat)>0.05||Math.abs(t[2]-p.lng)>0.06)return; var d=distKm(p,{lat:t[1],lng:t[2]}); if(d<bd){bd=d;best=t[0];} }); }); return best; }
-function classify(open){
-  var sea=[],long=0,maxR=0,sx=0,sy=0;
-  for(var i=0;i<16;i++){ var r=open[i]; if(r>=0.3){sea.push(i);sx+=Math.sin(i*Math.PI/8)*r;sy+=Math.cos(i*Math.PI/8)*r;} if(r>=1.5)long++; if(r>maxR)maxR=r; }
-  if(!sea.length) return null;
-  var face=Math.round(((Math.atan2(sx,sy)*8/Math.PI)+16))%16, perp=open[face];
-  if(perp<1.2&&maxR>=2.5&&long>=2) return {type:"瀬戸(水道)",face:face,maxR:maxR,eging:3,current:"fast"};
-  if(long>=6) return {type:"岬",face:face,maxR:maxR,eging:3,current:"normal"};
-  if(long>=3) return {type:"磯・海岸",face:face,maxR:maxR,eging:2,current:"normal"};
-  return {type:"入り江",face:face,maxR:maxR,eging:2,current:"normal",calm:true};
-}
 var AUTO_HOW={"岬":"先端から潮目を探す。潮が動く時間に回遊が入りやすい。",
   "瀬戸(水道)":"潮が速いので、潮止まり前後や小潮の日に重めのエギで底を取る。",
   "磯・海岸":"沖のかけあがりを広く探る。風が強い日は無理をしない。",
@@ -610,11 +600,11 @@ function render(){
 }
 
 function isWide(){ return window.matchMedia&&window.matchMedia('(min-width: 760px)').matches; }
-function spotHow(s,c){ return state.method==='eging'?(s.how||''):howFor(c,s); }
+function spotHow(s,c){ return howFor(c,s); }
 function spotCard(s,isTop,inCircle,c){
   var d=distKm(state.center,s);
   var tags=[s.area?'<span class="tag">'+esc(s.area)+'</span>':'', fishLine(s)?'<span class="tag">'+esc(fishLine(s))+'</span>':'',
-    (s.mine||s.auto)?'':'<span class="tag">風に'+["弱い","ふつう","強い"][s.shelter==null?1:s.shelter]+(s.northShelter?"(北風に強い)":"")+'</span>',
+    
     (s.current&&s.current!=="normal")?'<span class="tag">潮が速い</span>':'', s.light?'<span class="tag">常夜灯あり</span>':'', s.moved?'<span class="tag">位置を直した</span>':'',s.auto?'<span class="tag">'+(s.beach?'砂浜(地図データ)':'自動候補')+'</span>':'',s.port?'<span class="tag">国の漁港データ</span>':'',s.osm?'<span class="tag">OpenStreetMap</span>':'',(isSandy(s)&&!s.beach)?'<span class="tag">砂地あり</span>':'',s.shared?'<span class="tag shr">'+esc(s.byName)+'さんが共有('+esc(s.groupName)+')</span>':''].join("");
   return '<details class="spot'+(isTop?' hl':'')+(inCircle?'':' outside')+'" id="sp-'+esc(s.id)+'"><summary><h3>'+esc(s.name)+'<span class="d num">中心から'+d.toFixed(1)+'km</span></h3></summary>'+'<div class="tags">'+tags+'</div>'+(inCircle&&condLine(c,s)?'<p class="fishlog">'+esc(condLine(c,s))+'</p>':'')+
     (s.feat?'<p><span class="lbl">特徴</span>'+esc(s.feat)+'</p>':'')+(spotHow(s,c)?'<p><span class="lbl">'+esc(METHODS[state.method].name)+'の狙い方</span>'+esc(spotHow(s,c))+'</p>':'')+(s.log&&s.log.all&&Object.keys(s.log.all).length?'<p class="fishlog">ここで釣れた魚(自分の記録):'+esc(fishSummary(s.log.all))+'</p>':'')+(state.method!=='eging'&&s.fish&&!s.auto&&!s.mine?'<p class="fishlog">釣り情報に出ている魚:'+esc(s.fish.join("・"))+'</p>':'')+(s.note?'<p><span class="lbl">'+(s.mine?"メモ":"注意")+'</span>'+esc(s.note)+'</p>':'')+(inCircle?castBlock(s,c):'')+

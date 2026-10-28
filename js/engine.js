@@ -95,8 +95,10 @@ function season(month){
  * time: マヅメ・夜・日中の強さ / season: よく釣れる月 / tide: 潮の動きの好み
  * cast: 投げる向きの決め方(open=沖へ遠く / inner=港内や湾内の際 / foot=足元中心) */
 var METHODS={
-  eging:{name:"エギング",fish:["アオリイカ","コウイカ","ヤリイカ","ケンサキイカ"],unit:"杯",tackle:"エギ",
-    note:"アオリイカ・コウイカ"},
+  eging:{name:"エギング",fish:["アオリイカ","コウイカ","ヤリイカ","ケンサキイカ"],unit:"杯",tackle:"エギ",note:"アオリイカ・コウイカ",
+    kind:{"岬":6,"瀬戸(水道)":5,"磯":4,"磯・海岸":4,"港":4,"入り江":1,"砂浜":-6},season:[3,4,5,6,9,10,11,12],
+    time:{mazume:3,night:-1,day:0},tide:"move",cast:"eging",windMax:6,
+    how:{"港":"堤防の先端や港内の常夜灯まわりで、シャクリとフォールを繰り返す。秋は港内にも新子が入る。","岬":"先端から潮目を探す。潮が動く時間に回遊が入りやすい。","瀬戸(水道)":"潮が速いので、潮止まり前後に重めのエギで底を取る。","磯・海岸":"沖のかけあがりや藻場の際を広く探る。","入り江":"風の強い日の逃げ場。浅い藻場があれば春の産卵場になる。","default":"潮通しの良い面でシャクリとフォールを繰り返し、底を取る。"}},
   aji:{name:"アジング・サビキ",fish:["アジ","サバ","イワシ","コノシロ"],unit:"匹",tackle:"ジグヘッド・サビキ",
     kind:{"砂浜":-3,"港":7,"入り江":3,"岬":0,"瀬戸(水道)":-2,"磯":-2,"磯・海岸":-1},light:6,season:[5,6,7,8,9,10,11,12],
     time:{mazume:3,night:2,day:-1},tide:"move",cast:"inner",windMax:6,
@@ -147,93 +149,71 @@ SPOTS.forEach(function(s){ s.fish=SPOT_FISH[s.id]||["アオリイカ"]; s.kind=s
 SPOTS.forEach(function(s){ if(s.fish.indexOf("キス")>=0||s.id==="akasaki") s.sand=true; });
 function isSandy(s){ return !!(s.sand||s.kind==="砂浜"); }
 
+/* 地形の種類:海が何km開けているか(16方位)から決める。どのポイントも同じ基準で判定する */
+function classify(open){
+  if(!open) return null;
+  var sea=[],long=0,maxR=0,sx=0,sy=0;
+  for(var i=0;i<16;i++){ var r=open[i]; if(r>=0.3){sea.push(i);sx+=Math.sin(i*Math.PI/8)*r;sy+=Math.cos(i*Math.PI/8)*r;} if(r>=1.5)long++; if(r>maxR)maxR=r; }
+  if(!sea.length) return null;
+  var face=Math.round(((Math.atan2(sx,sy)*8/Math.PI)+16))%16, perp=open[face];
+  if(perp<1.2&&maxR>=2.5&&long>=2) return {type:"瀬戸(水道)",face:face,maxR:maxR,eging:3,current:"fast"};
+  if(long>=6) return {type:"岬",face:face,maxR:maxR,eging:3,current:"normal"};
+  if(long>=3) return {type:"磯・海岸",face:face,maxR:maxR,eging:2,current:"normal"};
+  return {type:"入り江",face:face,maxR:maxR,eging:2,current:"normal",calm:true};
+}
 function methodOf(c){ return METHODS[(c&&c.method)||"eging"]||METHODS.eging; }
 function spotKind(s){ var k=s.kind||(s.mine?"":"港"); return (k==="堤防"||k==="釣り場")?"港":k; }
 function fishHit(list,m){ return (list||[]).some(function(f){ return m.fish.some(function(x){ return f===x||f.indexOf(x.split("(")[0])===0||x.indexOf(f.split("(")[0])===0; }); }); }
 
 /* エギング以外の点数 */
+/* どのポイントにも同じ基準で点を付ける。使うのは、
+ *  ・地形(海岸線から計算した種類と、どちらに海が開けているか)
+ *  ・そのポイントの風・波・雨の予報、近くの観測地点の潮
+ *  ・季節(月)
+ *  ・自分の釣果の記録
+ * 手で入れた説明(釣り情報サイトの魚の実績・常夜灯など)は表示だけにして、点数には入れない。 */
 function rankGeneric(c,s,center,radiusKm){
-  var m=methodOf(c), k=spotKind(s), why=[], warn=[];
+  var m=methodOf(c), why=[], warn=[], geo=classify(s._open);
   var dk=center?distKm(center,s):0, sc=20;
+  var k=(s.kind&&s.kind!=="")?spotKind(s):(geo?geo.type:"");
+  if(k==="港"&&geo&&geo.type==="瀬戸(水道)") k="瀬戸(水道)";
+  var current=geo?geo.current:(s.current||"normal");
   var kb=m.kind[k]; if(kb==null) kb=0; sc+=kb;
   if(m.needSand&&isSandy(s)&&k!=="砂浜"){ sc+=4; why.push("近くに砂地がある"); }
   if(kb>=5) why.push(k+"は"+m.name+"の好ポイント"); else if(kb<=-2) warn.push(k+"は"+m.name+"にはあまり向かない");
-  if(s.fish&&fishHit(s.fish,m)){ sc+=6; why.push("釣り情報で"+m.fish.filter(function(f){return fishHit(s.fish,{fish:[f]});}).slice(0,2).join("・")+"の実績あり"); }
-  if(s.light&&m.light){ sc+=m.light; why.push("常夜灯がある"); }
-  if(s.beach) why.push("地図データ上の砂浜(OpenStreetMap)"); else if(s.auto) why.push("地形から自動で出した候補");
-  if(s.kind==="堤防") { sc+=2; why.push("堤防・波止(潮通しの良い先端を狙える)"); }
-  if(s.kind==="釣り場") { sc+=3; why.push("地図データ上の釣り場"); }
-  if(s.mine) why.push("自分で追加したポイント");
-  if(s.shared) why.push("仲間が共有したポイント");
   if(s.log&&s.log.trips){ sc+=Math.min(12,s.log.hits*4)-Math.min(4,s.log.trips-s.log.hits); why.unshift("自分の釣果:"+s.log.trips+"回のうち"+s.log.hits+"回釣れた(計"+s.log.total+m.unit+")"); }
-  var ws=c.wind_ms, wdi=DIRS16.indexOf(c.wind_dir), sh=(s.shelter==null?1:s.shelter);
-  if(s._open&&wdi>=0&&ws!=null){ var fw=s._open[wdi]; sh=fw>=1.5?0:(fw>=0.3?1:2); }
+  var ws=c.wind_ms, wdi=DIRS16.indexOf(c.wind_dir), sh=1;
+  if(s._open&&wdi>=0){ var fw=s._open[wdi]; sh=fw>=1.5?0:(fw>=0.3?1:2); }
   if(ws!=null){
-    if(ws>m.windMax){ sc-=(ws-m.windMax)*2*(2-sh); if(sh===2) why.push("今日の風向きだと風裏になる"); else warn.push("風が強め(この釣りの目安は"+m.windMax+"m以下)"); }
-    else if(ws<=3&&m.cast==="open"){ sc+=2; }
+    if(ws>3&&sh===2) why.push("今日の風向き("+c.wind_dir+")だと風裏になる");
+    if(ws>3&&sh===0) warn.push("今日の風("+c.wind_dir+")が海から正面に吹きつける");
+    if(ws>m.windMax){ sc-=(ws-m.windMax)*2*(2-sh); if(sh<2) warn.push("風が強め(この釣りの目安は"+m.windMax+"m以下)"); }
+    else if(ws<=3&&(m.cast==="open"||m.cast==="eging")){ sc+=2; why.push("風が弱く、沖へ投げやすい"); }
     if(ws>=10) warn.push("風速"+ws+"m。釣行は見送りが無難");
   }
+  if(s._open&&ws!=null&&ws>4){ var ca=castAdvice(s._open,c,s); if(ca&&ca.best!=null){ if(ca.rel==="tail"){sc+=3;why.push("投げる向きが追い風になる");} else if(ca.rel==="head"&&ca.alt==null){sc-=3;warn.push("どの向きに投げても向かい風になりやすい");} } }
   if(m.waveMax&&c.wave_m!=null&&c.wave_m>m.waveMax){ sc-=5; warn.push("波が"+c.wave_m+"mあり、足場の低い磯は危ない"); }
-  else if(c.wave_m!=null&&c.wave_m>=2) warn.push("波が高い。港内側だけにする");
+  else if(c.wave_m!=null&&c.wave_m>=1.5){ sc-=(2-sh)*2; if(c.wave_m>=2) warn.push("波が高い。港内側だけにする"); }
   var t=c.tide_class||c.tide_name, tL=(c.tide_range!=null?"干満差"+Math.round(c.tide_range)+"cm"+(c.tide_station?"("+c.tide_station+")":""):t), big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
-  if(m.tide==="strong"||m.tide==="move"){ if(big){ sc+=(m.tide==="strong"?6:4); why.push(tL+"で潮がよく動く"); } if(small) sc-=2; }
+  if(current==="fast"){
+    if(t==="大潮"){ sc-=4; warn.push("潮の速い場所なので、"+tL+"だと流れが速すぎることがある"); }
+    if(small){ sc+=5; why.push(tL+"で潮が緩い日は、潮の速い場所が釣りやすい"); }
+  } else if(m.tide==="strong"||m.tide==="move"){ if(big){ sc+=(m.tide==="strong"?6:4); why.push(tL+"で潮がよく動く"); } if(small) sc-=2; }
   else if(m.tide==="gentle"){ if(small){ sc+=3; why.push(tL+"で潮が緩く、釣りやすい"); } if(t==="大潮") sc-=1; }
   else if(m.tide==="rising"){ if(big){ sc+=3; why.push(tL+"で満ち込みがはっきりしている"); } }
-  if(s.current==="fast"&&m.tide==="gentle"){ sc-=3; }
   if(m.season.indexOf(c.month)>=0){ sc+=4; why.push(c.month+"月は"+m.name+"のシーズン"); } else { sc-=4; warn.push(c.month+"月はシーズン外で数は期待しにくい"); }
   if(m.rainBonus&&c.rain_max!=null&&c.rain_max>=1&&c.rain_max<5){ sc+=2; why.push("雨で濁りが入りやすい"); }
   if(c.rain_max!=null&&c.rain_max>=5) warn.push("強い雨の時間あり。雨雲を確認");
   if(s.ferry) warn.push("フェリーの時刻を確認");
-  return {spot:s,score:sc,dist:dk,why:why,warn:warn};
+  return {spot:s,score:sc,dist:dk,why:why,warn:warn,kind:k};
 }
-function howFor(c,s){ var m=methodOf(c); if(!m.how) return s.how||""; return m.how[spotKind(s)]||m.how["default"]; }
+function howFor(c,s){ var m=methodOf(c); if(m===METHODS.eging&&s.how) return s.how; var k=spotKind(s); if(!k){ var g=classify(s._open||s.open); k=g?g.type:""; } return m.how[k]||m.how["default"]; }
 
 /* 円の中のポイントに点数と理由を付ける。spots は円の中だけを渡す */
 function rankSpots(base,spots,center,radiusKm){
   var out=spots.map(function(s){
     var c=base.condFor?base.condFor(s):base;
-    if((c.method||"eging")!=="eging") return rankGeneric(c,s,center,radiusKm);
-    var eg=s.eging||2, sh=(s.shelter==null?1:s.shelter);
-    var dk=center?distKm(center,s):0;
-    var sc=eg*10, why=[], warn=[];
-    var ws=c.wind_ms, dir=c.wind_dir, north=NORTHISH.indexOf(dir)>=0, west=WESTISH.indexOf(dir)>=0, wdi=DIRS16.indexOf(dir);
-    if((s.auto||s.mine)&&s._open&&wdi>=0&&ws!=null){ var fw=s._open[wdi]; sh=fw>=1.5?0:(fw>=0.3?1:2); if(ws>3) why.push(sh===2?"今日の風向きだと風裏になる":(sh===0?"今日の風は海から正面に吹きつける":"")); why=why.filter(Boolean); }
-    if(s.auto) why.push("地形から自動で出した候補");
-    if(s.log&&s.log.trips){ sc+=Math.min(12,s.log.hits*4)-Math.min(4,s.log.trips-s.log.hits); why.unshift("自分の釣果:"+s.log.trips+"回のうち"+s.log.hits+"回釣れた(計"+s.log.total+"杯)"); }
-    if(s.shared) why.push("仲間が共有したポイント");
-    if(s.mine) why.push("自分で追加したポイント");
-    if(ws!=null){
-      if(ws<=3){ sc+=(2-sh)*3; if(sh<2) why.push("風が弱く、外向きや潮通しの良い面を攻めやすい"); }
-      else if(ws<=6){ sc+=sh*4; if(sh===2) why.push("風を避けやすい"); }
-      else { sc+=sh*8-10; why.push(sh===2?"風が強い日でも釣りになりやすい":"風の影響を受けやすい"); }
-      if(north&&ws>3&&s.northShelter){ sc+=6; why.push("北風に強い港"); }
-      if(west&&ws>4&&s.westExposed){ sc-=6; warn.push("西寄りの風を正面から受けやすい"); }
-      if(ws>=10) warn.push("風速"+ws+"m。釣行は見送りが無難");
-      else if(ws>=7&&sh<2) warn.push("風が強め。足場の高い沖側は避ける");
-    }
-    if(s._open){ var ca=castAdvice(s._open,c,s); if(ca&&ca.best!=null&&ws!=null&&ws>4){ if(ca.rel==="tail"){sc+=3;why.push("投げる向きが追い風になる");} else if(ca.rel==="head"&&ca.alt==null){sc-=3;warn.push("どの向きに投げても向かい風になりやすい");} } }
-    var t=c.tide_class||c.tide_name, tL=(c.tide_range!=null?"干満差"+Math.round(c.tide_range)+"cm"+(c.tide_station?"("+c.tide_station+")":""):t), big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
-    if(s.current==="fast"||s.current==="complex"){
-      if(t==="大潮"){ sc-=5; warn.push("大潮は流れが速すぎることがある"); }
-      if(small){ sc+=8; why.push(tL+"で潮が緩い日は、潮の速い場所が有利"); }
-      if(t==="中潮"){ sc+=3; why.push("中潮でほどよく潮が動く"); }
-    } else {
-      if(big){ sc+=6; why.push(tL+"で潮がよく動く"); }
-      if(small){ sc-=2; }
-    }
-    var se=season(c.month);
-    if(se==="autumn"){
-      if(s.light){ sc+=4; why.push("秋は常夜灯まわりに新子が寄りやすい"); }
-      if(s.id==="hiai"){ sc+=3; why.push("秋の新子は港内にも入る"); }
-    } else if(se==="spring"){
-      if(eg===3){ sc+=3; why.push("春の大型は潮通しの良い場所に寄る"); }
-    } else if(se==="winter"){
-      if(s.kou||/コウイカ/.test(s.ika||"")){ sc+=5; why.push("冬はコウイカ狙いで底を探る"); }
-    }
-    if(c.wave_m!=null&&c.wave_m>=1){ sc+=sh*3; if(c.wave_m>=2) warn.push("波が高い。港内側だけにする"); }
-    if(c.rain_max!=null&&c.rain_max>=5) warn.push("強い雨の時間あり。雨雲を確認");
-    if(s.ferry) warn.push("フェリーの時刻を確認");
-    return {spot:s,score:sc,dist:dk,why:why,warn:warn};
+    return rankGeneric(c,s,center,radiusKm);
   });
   out.forEach(function(r){ r.score=Math.round(r.score*10)/10; });
   out.sort(function(a,b){ return b.score-a.score||(a.spot.id<b.spot.id?-1:1); });
@@ -251,12 +231,12 @@ function hourlyScore(c,spot){
     if(mt){
       if(dm<=1.25) v+=mt.mazume*(1-dm/1.5);
       var night=(h<sr-1||h>ss+1);
-      if(night) v+=mt.night+(spot&&spot.light&&mt.night>0?1:0); else if(dm>1.25) v+=mt.day;
+      if(night) v+=mt.night; else if(dm>1.25) v+=mt.day;
       if(methodOf(c).tide==="rising"&&curve&&curve.at(h+0.25)>curve.at(h-0.25)) v+=1.2;
       if(methodOf(c).tide==="gentle"&&curve) v-=curve.move(h)*1.5;
     } else {
       if(dm<=1.25) v+=3*(1-dm/1.5);
-      if(h<sr-1||h>ss+1) v-=(spot&&spot.light&&season(c.month)==="autumn")?0.5:1.5;
+      if(h<sr-1||h>ss+1) v-=1.5;
     }
     if(c.wind_by_hour){ var wh=c.wind_by_hour[Math.min(23,Math.floor(h))]; if(wh!=null&&wh>6) v-=(wh-6)*0.35; }
     if(c.rain_by_hour){ var rh=c.rain_by_hour[Math.min(23,Math.floor(h))]; if(rh!=null&&rh>=3) v-=1; }
@@ -327,4 +307,4 @@ function castAdvice(open,c,spot){
   return {best:best,lo:lo,hi:hi,rel:r,alt:alt,kind:kind(best),text:text};
 }
 
-if(typeof module!=="undefined") module.exports={isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};
+if(typeof module!=="undefined") module.exports={classify:classify,isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};
