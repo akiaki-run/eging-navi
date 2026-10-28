@@ -440,10 +440,74 @@ function pastCond(r){
     return out;
   });
 }
+
+/* ===== 文章で書いた過去の釣果を読み取る =====
+ * 1行に1回分。例:2026/9/12 8:30 高浜港 アオリイカ2杯 南西 外海
+ * 日付・時刻(または朝/夕方/夜)・場所・魚と数・(向き・港内か外海か・釣り方)は順不同。 */
+function normPlace(t){ return (t||"").replace(/[\s　]/g,"").replace(/漁港$/,"港"); }
+function placeCands(){
+  var out=[]; SPOTS.forEach(function(s){ out.push({name:s.name,lat:s.lat,lng:s.lng,id:s.id}); });
+  state.mine.forEach(function(s){ out.push({name:s.name,lat:s.lat,lng:s.lng,id:s.id,mine:true}); });
+  (state.ports||[]).forEach(function(p){ if(/^[0-9]+$/.test(p[0])) return; out.push({name:/港$/.test(p[0])?p[0]:p[0]+"港",lat:p[1],lng:p[2]}); });
+  return out;
+}
+function findPlace(word){
+  var w=normPlace(word); if(!w) return Promise.resolve(null);
+  var c=placeCands(), hit=c.filter(function(x){ return normPlace(x.name)===w; });
+  if(!hit.length) hit=c.filter(function(x){ var n=normPlace(x.name); return n.length>=2&&(w.indexOf(n.replace(/港$/,""))>=0||n.indexOf(w.replace(/港$/,""))>=0); });
+  if(hit.length){ hit.sort(function(a,b){ return distKm(state.center,a)-distKm(state.center,b); }); return Promise.resolve({name:word,lat:hit[0].lat,lng:hit[0].lng,id:hit[0].id||null,match:hit[0].name,known:true}); }
+  return fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(word)).then(function(r){return r.json();}).then(function(j){
+    if(!j||!j.length) return null; var f=j[0], ll={lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0]};
+    var near=c.filter(function(x){ return distKm(x,ll)<1.5; }).sort(function(a,b){ return distKm(ll,a)-distKm(ll,b); })[0];
+    return near?{name:word,lat:near.lat,lng:near.lng,id:near.id||null,known:true,match:near.name+"(「"+f.properties.title+"」の近く)"}:{name:word,lat:ll.lat,lng:ll.lng,id:null,match:f.properties.title+"(地名の位置)"};
+  }).catch(function(){ return null; });
+}
+var TIME_WORD={"朝マヅメ":"05:45","朝まづめ":"05:45","早朝":"05:30","朝":"07:00","午前":"09:00","昼":"12:00","日中":"12:00","午後":"14:00","夕マヅメ":"17:30","夕まづめ":"17:30","夕方":"17:30","夕":"17:30","夜":"20:00","夜中":"23:00","深夜":"01:00"};
+function parseLine(line){
+  var t=line.replace(/[０-９]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)-65248);}).replace(/：/g,":").replace(/[、,，]/g," ").replace(/[〜～~]/g,"-").trim();
+  if(!t) return null; var r={raw:line,items:[],method:"eging",memo:""};
+  var d=t.match(/(?:(\d{4})[\/年.-])?(\d{1,2})[\/月.-](\d{1,2})日?/);
+  if(!d) return {raw:line,err:"日付が見つかりません"}; t=t.replace(d[0]," ");
+  var now=new Date(Date.now()+9*36e5), y=d[1]?+d[1]:now.getUTCFullYear();
+  if(!d[1]&&(+d[2]>now.getUTCMonth()+1||(+d[2]===now.getUTCMonth()+1&&+d[3]>now.getUTCDate()))) y--;
+  var tm=t.match(/(\d{1,2}):(\d{2})(?:\s*-\s*(\d{1,2}):(\d{2}))?/), hh="12:00";
+  if(tm){ hh=("0"+tm[1]).slice(-2)+":"+tm[2]; if(tm[3]){ r.memo=tm[0].replace(/\s/g,"")+"の間"; } t=t.replace(tm[0]," "); }
+  else { var tw=Object.keys(TIME_WORD).sort(function(a,b){return b.length-a.length;}).filter(function(k){return t.indexOf(k)>=0;})[0];
+    if(tw){ hh=TIME_WORD[tw]; t=t.replace(tw," "); } else r.memo="時刻不明"; }
+  r.at=y+"-"+("0"+d[2]).slice(-2)+"-"+("0"+d[3]).slice(-2)+"T"+hh+":00+09:00";
+  Object.keys(METHODS).forEach(function(k){ var nm=METHODS[k].name.split(/[・(]/)[0]; if(t.indexOf(nm)>=0){ r.method=k; t=t.replace(nm," "); } });
+  if(/ボウズ|坊主|釣れず|0杯|0匹/.test(t)){ t=t.replace(/ボウズ|坊主|釣れず/g," "); }
+  if(/港内|湾内|港の中/.test(t)){ r.water="inner"; t=t.replace(/港内|湾内|港の中/g," "); } else if(/外海|港外|沖向き|(^|\s)沖(\s|$)/.test(t)){ r.water="outer"; t=t.replace(/外海側?|港外|沖向き|(^|\s)沖(?=\s|$)/g," "); }
+  var fish=FISH_ALL.concat(["イカ","アジ","カサゴ","スズキ","キス","ハタ"]).map(function(f){return {full:f,key:f.split("(")[0]};}).sort(function(a,b){return b.key.length-a.key.length;});
+  var again=true; while(again){ again=false;
+    for(var i=0;i<fish.length;i++){ var re=new RegExp(fish[i].key+"\\s*(\\d+)?\\s*(杯|匹|尾|本|枚)?"), m=t.match(re);
+      if(m){ r.items.push({kind:fish[i].full,count:m[1]?+m[1]:1,size:""}); t=t.replace(m[0]," "); again=true; break; } } }
+  r.items=r.items.filter(function(it){return it.count>0;});
+  var dm=t.match(/(?:^|\s)(北北東|東北東|東南東|南南東|南南西|西南西|西北西|北北西|北東|南東|南西|北西|北|東|南|西)(?:向き|へ|方向)?(?=\s|$)/);
+  if(dm){ var rest=t.replace(dm[0]," "); if(normPlace(rest).length>=2){ r.cast_dir=dm[1]; t=rest; } }
+  r.place=t.replace(/\s+/g," ").trim();
+  if(!r.place) r.err="場所が見つかりません";
+  return r;
+}
+function readText(txt){
+  var lines=txt.split(/\n/).map(parseLine).filter(Boolean);
+  return Promise.all(lines.map(function(r){ if(r.err) return r; return findPlace(r.place).then(function(p){ if(!p){ r.err="「"+r.place+"」の場所が分かりません"; return r; }
+    r.lat=p.lat; r.lng=p.lng; r.name=p.known?p.match.replace(/\(.*$/,""):r.place; r.match=p.match;
+    if(p.id) r.spot_id=p.id; else if(p.known){ r.spot_id="port_"+normPlace(r.name); r.noSpot=true; } else r.spot_id="imp_"+normPlace(r.place).replace(/[^\w\u3040-\u9fff]/g,"");
+    r.imp="t_"+r.at+"_"+normPlace(r.place)+"_"+r.items.map(function(i){return i.kind+i.count;}).join(""); return r; }); }));
+}
 function importRecords(){
   var msg=document.getElementById("impMsg"), txt=document.getElementById("impText").value.trim(), list;
   if(!txt){ msg.textContent="取り込む文字を貼り付けてください。"; return; }
-  try{ list=JSON.parse(txt); if(!Array.isArray(list)) list=[list]; }catch(e){ msg.textContent="読み取れませんでした。貼り付けた文字をそのまま確認してください。"; return; }
+  if(!/^[\[{]/.test(txt)){
+    if(importRecords.preview&&importRecords.preview.txt===txt){ list=importRecords.preview.list; importRecords.preview=null; }
+    else { msg.textContent="読み取っています…"; readText(txt).then(function(rs){
+      var ok=rs.filter(function(r){return !r.err;}), ng=rs.filter(function(r){return r.err;});
+      document.getElementById("impPrev").innerHTML=rs.map(function(r){ return '<div class="'+(r.err?'zero':'')+'">'+(r.err?'× '+esc(r.raw)+' … '+esc(r.err):'○ '+esc(r.at.slice(0,10).replace(/-/g,"/")+" "+r.at.slice(11,16))+' '+esc(r.match||r.name)+' '+esc(r.items.length?r.items.map(function(i){return i.kind+i.count;}).join("・"):"ボウズ")+(r.cast_dir?' '+esc(r.cast_dir)+'へ':'')+(r.water?' '+esc(WATER_NAME[r.water]):'')+(r.memo?' ('+esc(r.memo)+')':''))+'</div>'; }).join("");
+      importRecords.preview={txt:txt,list:ok};
+      msg.textContent=ok.length?("読み取れた"+ok.length+"件を確かめて、よければもう一度「取り込む」を押してください。"+(ng.length?"×の行は直してください。":"")):"読み取れた行がありません。"; });
+      return; } }
+  else { try{ list=JSON.parse(txt); if(!Array.isArray(list)) list=[list]; }catch(e){ msg.textContent="読み取れませんでした。"; return; } }
   var have={}; state.catches.forEach(function(x){ if(x.imp) have[x.imp]=1; });
   var todo=list.filter(function(r){ return r&&r.at&&r.lat!=null&&r.lng!=null&&!have[r.imp]; });
   if(!todo.length){ msg.textContent="新しく取り込む記録はありません(取り込み済み)。"; return; }
@@ -451,16 +515,16 @@ function importRecords(){
   var chain=Promise.resolve();
   todo.forEach(function(r){ chain=chain.then(function(){
     msg.textContent="取り込み中… "+done+"/"+todo.length;
-    var fixed=SPOTS.filter(function(s){ return distKm(s,r)<0.3; })[0], sid=fixed?fixed.id:(r.spot_id||("imp_"+(r.name||"").replace(/[^\w぀-鿿]/g,"")));
+    var fixed=SPOTS.concat(state.mine).filter(function(s){ return distKm(s,r)<0.3; })[0], sid=fixed?fixed.id:(r.spot_id||("imp_"+(r.name||"").replace(/[^\w぀-鿿]/g,"")));
     var pre=Promise.resolve();
-    if(!fixed&&!spotsMade[sid]&&!state.mine.some(function(s){return s.id===sid;})){ spotsMade[sid]=1;
+    if(!fixed&&!r.noSpot&&!spotsMade[sid]&&!state.mine.some(function(s){return s.id===sid;})){ spotsMade[sid]=1;
       pre=Store.saveSpot(sid,{name:r.name,note:r.spot_note||"",lat:r.lat,lng:r.lng,createdAt:new Date().toISOString(),from_import:true}); }
     return pre.then(function(){ return pastCond(r); }).then(function(cond){
       var items=r.items||[], rec={spot_id:sid,spot_name:fixed?fixed.name:r.name,lat:r.lat,lng:r.lng,at:new Date(r.at).toISOString(),method:r.method||"eging",items:items,
         count:items.reduce(function(a,b){return a+(b.count||0);},0),kind:items[0]?items[0].kind:"",tackle:r.tackle||"",cast_dir:r.cast_dir||null,memo:r.memo||"",cond:cond,imp:r.imp||null,createdAt:new Date().toISOString()};
       return Store.addCatch(rec); }).then(function(){ done++; });
   }); });
-  chain.then(function(){ msg.textContent=done+"件を取り込みました。"; document.getElementById("impText").value=""; })
+  chain.then(function(){ msg.textContent=done+"件を取り込みました。"; document.getElementById("impText").value=""; document.getElementById("impPrev").innerHTML=""; })
     .catch(function(e){ console.warn(e); msg.textContent="途中で止まりました("+done+"件まで取り込み済み)。もう一度押すと続きから取り込みます。"; })
     .then(function(){ btn.disabled=false; });
 }

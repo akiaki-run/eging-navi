@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028n">
+<link rel="stylesheet" href="css/style.css?v=20261028o">
 </head>
 <body>
 <div class="wrap">
@@ -86,10 +86,13 @@
 <details class="fold" id="logBox">
   <summary><h2 id="logSum">釣果の記録</h2></summary>
   <div id="logList"></div>
-  <details class="more" id="impBox"><summary>過去の記録をまとめて取り込む</summary>
-    <p class="src">Claude に作ってもらった取り込み用の文字(JSON)を貼り付けて「取り込む」を押します。その日の風・波・水温・潮は自動で付けます。同じものを2回取り込んでも重複しません。</p>
-    <textarea id="impText" rows="5" style="width:100%"></textarea>
+  <details class="more" id="impBox"><summary>過去の釣果を文章でまとめて入れる</summary>
+    <p class="src">1回分を1行で書きます。順番は自由です。日付・時刻(朝・夕方・夜でも可)・場所(港の名前や地名)・魚と数。分かれば投げた向き(南西など)と「港内」か「外海」も。釣れなかった日は「ボウズ」。</p>
+    <p class="src">例:<br>2026/9/12 8:30 高浜港 アオリイカ1杯 南西 外海<br>10/12 7:00-10:00 樋合旧港 コウイカ3 港内<br>10/20 夕方 姫戸港 ボウズ</p>
+    <textarea id="impText" rows="5" style="width:100%" placeholder="ここに書く(何行でも)"></textarea>
     <div><button class="btn pri sm" id="impBtn" type="button">取り込む</button> <span class="src" id="impMsg"></span></div>
+    <div id="impPrev" class="src"></div>
+    <p class="src">1件ずつ入れるときは、地図でポイントを押して「ここで釣果を記録」から日時を過去に直して保存しても同じです。その日の風・波・水温・潮は自動で付きます。</p>
   </details>
 </details>
 
@@ -156,10 +159,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028n"></script>
-<script src="js/engine.js?v=20261028n"></script>
-<script src="js/wx.js?v=20261028n"></script>
-<script src="js/store.js?v=20261028n"></script>
-<script src="js/app.js?v=20261028n"></script>
+<script src="firebase-config.js?v=20261028o"></script>
+<script src="js/engine.js?v=20261028o"></script>
+<script src="js/wx.js?v=20261028o"></script>
+<script src="js/store.js?v=20261028o"></script>
+<script src="js/app.js?v=20261028o"></script>
 </body>
 </html>
