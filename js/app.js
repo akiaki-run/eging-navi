@@ -47,22 +47,31 @@ function slotRange(slot,sr,ss){
   if(slot==="auto"){ if(state.offset===0){ var n=nowH(); slot=n<sr+1?"morning":(n<ss+1?"evening":"night"); } else slot="evening"; }
   if(slot==="morning") return [sr-1,sr+2,slot]; if(slot==="day") return [10,15,slot]; if(slot==="evening") return [ss-2,ss+1,slot]; return [ss+1.5,23,slot];
 }
+/* ポイントの種類(岬・港・瀬戸など)。記録に残して、地形ごとの釣れやすさを学習する */
+function kindOf(s){ if(!s) return null; var o=openCache[okey(s)]||s.open||s._open, g=o?classify(o):null, k=s.kind?spotKind(s):(g?g.type:"");
+  if(k==="港"&&g&&g.type==="瀬戸(水道)") k="瀬戸(水道)"; return k||null; }
+function kindAt(x){ if(x.spot_kind) return x.spot_kind; var sp=allSpots().filter(function(s){return s.id===x.spot_id;})[0];
+  if(!sp&&x.lat!=null) sp=allSpots().filter(function(s){return Math.abs(s.lat-x.lat)<0.004&&distKm(s,x)<0.3;})[0]; return kindOf(sp); }
 /* ===== 記録からの学習:条件ごとの「釣れた割合」を全体と比べて点数を自動で直す ===== */
 var learnMemo={k:"",v:null};
 function computeLearn(){
   var mk=state.method+"|"+(state.target||"")+"|"+state.catches.length+"|"+(state.trips||[]).length; if(learnMemo.k===mk) return learnMemo.v;
-  var m=METHODS[state.method], units=[], inTrip={};
+  var m=METHODS[state.method], units=[], inTrip={}, day={};
   function tm(at,lat,lng){ if(!at||lat==null) return {}; var d=new Date(new Date(at).getTime()+9*36e5), h=d.getUTCHours()+d.getUTCMinutes()/60, st=sunTimes(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate(),lat,lng);
     var noon=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),3)), tb=timeBucket(h,hm2h(st.rise),hm2h(st.set)); return {time:tb,moon:tb==="夜"?moonBucket(moonAge(noon)):null}; }
   (state.trips||[]).forEach(function(t){ if((t.method||"eging")!==state.method) return; var mid=t.start&&t.end?new Date((new Date(t.start).getTime()+new Date(t.end).getTime())/2).toISOString():t.start;
-    inTrip[t.id]={cond:t.cond,hit:false,tm:tm(mid,t.lat,t.lng)}; units.push(inTrip[t.id]); });
+    inTrip[t.id]={cond:t.cond,hit:false,tm:tm(mid,t.lat,t.lng),kind:kindAt(t)}; units.push(inTrip[t.id]); });
   state.catches.forEach(function(x){ var hit=recItems(x).some(function(it){ return it.count>0&&targetHit(it.kind,m,state.target); });
     if(x.trip_id&&inTrip[x.trip_id]){ if(hit) inTrip[x.trip_id].hit=true; return; }
-    if((x.method||"eging")===state.method||hit) units.push({cond:x.cond,hit:hit,tm:tm(x.at,x.lat,x.lng)}); });
+    if(!((x.method||"eging")===state.method||hit)) return;
+    /* 同じ日・同じ場所(約1km)の記録は1回の釣行にまとめる */
+    var dk=(x.at?new Date(new Date(x.at).getTime()+9*36e5).toISOString().slice(0,10):x.id)+"|"+(x.lat!=null?Math.round(x.lat*100)+","+Math.round(x.lng*100):x.spot_id);
+    if(day[dk]){ if(hit) day[dk].hit=true; return; }
+    day[dk]={cond:x.cond,hit:hit,tm:tm(x.at,x.lat,x.lng),kind:kindAt(x)}; units.push(day[dk]); });
   var n=units.length, hits=units.filter(function(u){return u.hit;}).length, out=null;
   if(n>=8&&hits<n&&hits>0){ var p0=hits/n, K=6; out={n:n};
-    ["rain","tide","wind"].forEach(function(f){ var g={};
-      units.forEach(function(u){ if(!u.cond) return; var b=learnBuckets(u.cond)[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(u.hit) o.h++; });
+    ["rain","tide","wind","kind","temp","rough"].forEach(function(f){ var g={};
+      units.forEach(function(u){ var b=learnBuckets(Object.assign({},u.cond||{},{method:state.method,target:state.target,spot_kind:u.kind}))[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(u.hit) o.h++; });
       out[f]={}; Object.keys(g).forEach(function(b){ var o=g[b], pb=(o.h+p0*K)/(o.n+K); out[f][b]=Math.max(-5,Math.min(5,Math.round((pb-p0)*20))); }); });
     ["time","moon"].forEach(function(f){ var g={};
       units.forEach(function(u){ var b=u.tm&&u.tm[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(u.hit) o.h++; });
@@ -365,7 +374,7 @@ function genAuto(){
 var logSpotId=null;
 function recItems(x){ if(x.items) return x.items; return x.count>0?[{kind:x.kind||"アオリイカ",count:x.count,size:x.max_g?x.max_g+"g":""}]:[]; }
 function logStats(id,sp){
-  var m=METHODS[state.method], t=0,h=0,n=0, all={}, dirs={}, water={}, wind=[];
+  var m=METHODS[state.method], t=0,h=0,n=0, all={}, dirs={}, water={}, wind=[], dayT={}, dayH={};
   var atSp=function(x){ return x.spot_id===id||(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.004&&distKm(x,sp)<0.3); };
   var trips=(state.trips||[]).filter(function(tr){ return atSp(tr)&&((tr.method||"eging")===state.method); }), tripIds={}, tripHit={};
   trips.forEach(function(tr){ tripIds[tr.id]=1; });
@@ -374,7 +383,9 @@ function logStats(id,sp){
   state.catches.forEach(function(x){ if(!atSp(x)) return; var inTrip=x.trip_id&&tripIds[x.trip_id];
     var its=recItems(x), mine=its.filter(function(it){ return it.count>0&&targetHit(it.kind,m,state.target); });
     its.forEach(function(it){ if(it.count>0) all[it.kind]=(all[it.kind]||0)+it.count; });
-    if((x.method||"eging")===state.method||mine.length){ if(!inTrip) t++; if(mine.length){ if(!inTrip) h++; mine.forEach(function(it){ n+=it.count; });
+    /* 釣り開始〜終了の外の記録は、同じ日の分を1回の釣行として数える */
+    var dk=x.at?new Date(new Date(x.at).getTime()+9*36e5).toISOString().slice(0,10):x.id;
+    if((x.method||"eging")===state.method||mine.length){ if(!inTrip&&!dayT[dk]){ dayT[dk]=1; t++; } if(mine.length){ if(!inTrip&&!dayH[dk]){ dayH[dk]=1; h++; } mine.forEach(function(it){ n+=it.count; });
       var di=x.cast_dir?DIRS16.indexOf(x.cast_dir):-1; if(di>=0){ dirs[di]=(dirs[di]||0)+1; }
       if(x.water){ water[x.water]=(water[x.water]||0)+1; if(x.cond&&x.cond.wind_ms!=null) wind.push({w:x.water,ms:x.cond.wind_ms}); } } } });
   var kinds=Object.keys(all);
@@ -499,7 +510,8 @@ function endTrip(){
   var t=activeTrip(); if(!t) return; var msg=document.getElementById("tripMsg");
   var end=new Date(), forgot=false; if(end-new Date(t.start)>12*36e5){ end=new Date(new Date(t.start).getTime()+3*36e5); forgot=true; }
   var cs=tripCatches(t.id), hits=0, total=0, fish={}; cs.forEach(function(x){ var its=recItems(x); if(its.length) hits++; its.forEach(function(it){ total+=it.count; fish[it.kind]=(fish[it.kind]||0)+it.count; }); });
-  var rec={id:t.id,start:t.start,end:end.toISOString(),method:t.method,lat:t.lat,lng:t.lng,spot_id:t.spot_id,spot_name:t.name,catches:cs.length,total:total,fish:fish,memo:forgot?"終了を押し忘れたため3時間とした":"",createdAt:new Date().toISOString()};
+  var tsp=t.spot_id&&allSpots().filter(function(x){return x.id===t.spot_id;})[0];
+  var rec={spot_kind:tsp?kindOf(tsp):null,id:t.id,start:t.start,end:end.toISOString(),method:t.method,lat:t.lat,lng:t.lng,spot_id:t.spot_id,spot_name:t.name,catches:cs.length,total:total,fish:fish,memo:forgot?"終了を押し忘れたため3時間とした":"",createdAt:new Date().toISOString()};
   msg.textContent="記録しています…";
   var mid=new Date((new Date(t.start).getTime()+end.getTime())/2).toISOString();
   var pc=(t.lat!=null)?pastCond({lat:t.lat,lng:t.lng,at:mid}).catch(function(){return null;}):Promise.resolve(null);
@@ -587,8 +599,11 @@ function saveLog(){
   if(s.auto){ var keep={name:s.name,note:s.note||"",lat:s.lat,lng:s.lng,eging:s.eging,current:s.current,kind:s.kind,feat:s.feat,how:s.how,open:s.open||null,createdAt:new Date().toISOString(),from_auto:true};
     chain=Store.saveSpot(s.id,keep); }
   document.getElementById("lgSave").disabled=true;
-  if(new Date(iso).getTime()<Date.now()-3*36e5){ msg.textContent="その日の天気と潮を調べています…";
-    chain=chain.then(function(){ return pastCond(rec).then(function(c){ if(c&&(c.wind_ms!=null||c.tide_phase)) rec.cond=c; }).catch(function(){}); }); }
+  /* 今の記録も昔の記録も、その場所・その時刻の詳しい条件(水温・前の雨・時化)を付ける。電波が無ければ今わかる分だけ */
+  var old=new Date(iso).getTime()<Date.now()-3*36e5; if(old) msg.textContent="その日の天気と潮を調べています…";
+  rec.spot_kind=kindOf(s);
+  chain=chain.then(function(){ return Promise.race([pastCond(rec),new Promise(function(ok){ setTimeout(function(){ok(null);},old?15000:6000); })])
+    .then(function(c){ if(c&&(c.wind_ms!=null||c.tide_phase||c.sst_c!=null)) rec.cond=old?c:Object.assign({},rec.cond,c); }).catch(function(){}); });
   var ph=pendingPhoto; if(ph) rec.photo=true;
   var at=activeTrip(); if(at&&new Date(iso)>=new Date(at.start)-36e5) rec.trip_id=at.id;
   chain.then(function(){ return Store.addCatch(rec); }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
@@ -707,7 +722,7 @@ function importRecords(){
     if(!fixed&&!r.noSpot&&!spotsMade[sid]&&!state.mine.some(function(s){return s.id===sid;})){ spotsMade[sid]=1;
       pre=Store.saveSpot(sid,{name:r.name,note:r.spot_note||"",lat:r.lat,lng:r.lng,createdAt:new Date().toISOString(),from_import:true}); }
     return pre.then(function(){ return pastCond(r); }).then(function(cond){
-      var items=r.items||[], rec={spot_id:sid,spot_name:fixed?fixed.name:r.name,lat:r.lat,lng:r.lng,at:new Date(r.at).toISOString(),method:r.method||"eging",items:items,
+      var items=r.items||[], rec={spot_kind:fixed?kindOf(fixed):null,spot_id:sid,spot_name:fixed?fixed.name:r.name,lat:r.lat,lng:r.lng,at:new Date(r.at).toISOString(),method:r.method||"eging",items:items,
         count:items.reduce(function(a,b){return a+(b.count||0);},0),kind:items[0]?items[0].kind:"",tackle:r.tackle||"",cast_dir:r.cast_dir||null,memo:r.memo||"",cond:cond,imp:r.imp||null,createdAt:new Date().toISOString()};
       return Store.addCatch(rec); }).then(function(){ done++; });
   }); });
@@ -722,7 +737,7 @@ function renderLog(){
   var ls=document.getElementById("logSum"); if(ls) ls.textContent="釣果の記録("+state.catches.length+"回)";
   var bySp={}; state.catches.forEach(function(x){ var k=x.spot_name||"?", o=bySp[k]=bySp[k]||{n:0,h:0,f:{}}; o.n++; var its=recItems(x); if(its.length) o.h++; its.forEach(function(it){ o.f[it.kind]=(o.f[it.kind]||0)+it.count; }); });
   var L=computeLearn(), lt="";
-  if(L){ var parts=[]; ["rain","tide","wind","time","moon"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
+  if(L){ var parts=[]; ["rain","tide","wind","kind","temp","rough","time","moon"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
     lt='<p><b>記録からの自動調整</b>('+esc(METHODS[state.method].name)+'・'+L.n+'回分):'+(parts.length?esc(parts.join("、")):"まだ条件による差ははっきりしていません")+'</p>'; }
   else lt='<p><b>記録からの自動調整</b>:'+esc(METHODS[state.method].name)+'で、ボウズも含めて8回以上の記録がたまると始まります。釣り開始〜終了で残すと、ボウズの回も自然に入ります。</p>';
   var rs=document.getElementById("recSpots"); if(rs) rs.innerHTML=lt+'<b>場所ごと</b><br>'+Object.keys(bySp).sort(function(a,b){return bySp[b].n-bySp[a].n;}).map(function(k){ var o=bySp[k]; return esc(k)+':'+o.n+'回中'+o.h+'回釣れた'+(Object.keys(o.f).length?'('+esc(fishSummary(o.f))+')':''); }).join("<br>");

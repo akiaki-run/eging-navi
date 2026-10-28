@@ -192,10 +192,15 @@ function rainEff(c){ return c.rain72==null?null:(c.rain24||0)+((c.rain72||0)-(c.
 function timeBucket(h,sr,ss){ var dm=Math.min(Math.abs(h-sr),Math.abs(h-ss)); return dm<=1.25?"マヅメ":((h<sr-1||h>ss+1)?"夜":"日中"); }
 function moonBucket(age){ if(age==null) return null; var il=(1-Math.cos(2*Math.PI*age/29.530588853))/2; return il>=0.6?"月夜":(il<=0.25?"闇夜":null); }
 function learnBuckets(c){
-  var e=rainEff(c), t=c.tide_class||c.tide_name||"", ws=c.wind_ms;
-  return {rain:e==null?null:(e<10?"雨なし":(e<30?"少し雨のあと":"大雨のあと")),
-    tide:/大/.test(t)?"大潮":(/中/.test(t)?"中潮":(/小|長|若/.test(t)?"小潮":null)),
-    wind:ws==null?null:(ws<3?"風が弱い":(ws<6?"風がやや強い":"風が強い"))};
+  var e=rainEff(c), tn=c.tide_name||"", t=c.tide_class||tn, ws=c.wind_ms;
+  /* 長潮・若潮は小潮とは動き方が違うので、別に数える(月齢から決まる潮名で判断) */
+  var tide=/長潮|若潮/.test(tn)?tn:(/大/.test(t)?"大潮":(/中/.test(t)?"中潮":(/小/.test(t)?"小潮":null)));
+  var spc=speciesOf(c.target), tr=(spc&&spc.temp)||METHOD_TEMP[c.method||"eging"], v=c.sst_c, temp=null;
+  if(v!=null&&tr) temp=(v>=tr[0]&&v<=tr[1])?"適水温":(v<tr[0]?"水温が低め":"水温が高め");
+  var rough=c.prev_wind==null?null:(((c.prev_wind>=10)||(c.prev_wave!=null&&c.prev_wave>=2))?"時化のあと":"時化なし");
+  return {rain:e==null?null:(e<10?"雨なし":(e<30?"少し雨のあと":"大雨のあと")), tide:tide,
+    wind:ws==null?null:(ws<3?"風が弱い":(ws<6?"風がやや強い":"風が強い")),
+    kind:c.spot_kind?("地形:"+c.spot_kind):null, temp:temp, rough:rough};
 }
 function rankGeneric(c,s,center,radiusKm){
   var m=methodOf(c), why=[], warn=[], geo=classify(s._open);
@@ -251,9 +256,9 @@ function rankGeneric(c,s,center,radiusKm){
     else if(fw<0&&eff>=10){ var bo=eff>80?-2:Math.round(Math.min(4,(eff-5)/5)*(-fw)*(0.5+0.5*rf)*10)/10; sc+=bo;
       if(bo>0) why.push(rtxt+"で濁りが入り、警戒心が薄れやすい"+(near?"(近くに川がある)":"")); else warn.push(rtxt+"。濁りが強すぎる"); }
   }
-  if(c.learn){ var B=learnBuckets(c);
-    ["rain","tide","wind"].forEach(function(f){ var b=B[f], a=b&&c.learn[f]&&c.learn[f][b]; if(!a||Math.abs(a)<1) return; sc+=a;
-      (a>0?why:warn).push("自分の記録から:"+b+"の日は"+(a>0?"よく釣れている":"釣れにくい")+"("+(a>0?"+":"")+a+")"); }); }
+  if(c.learn){ var B=learnBuckets(Object.assign({},c,{spot_kind:k}));
+    ["rain","tide","wind","kind","temp","rough"].forEach(function(f){ var b=B[f], a=b&&c.learn[f]&&c.learn[f][b]; if(!a||Math.abs(a)<1) return; sc+=a;
+      (a>0?why:warn).push("自分の記録から:"+(f==="kind"?b.replace("地形:","")+"では":b+"の日は")+(a>0?"よく釣れている":"釣れにくい")+"("+(a>0?"+":"")+a+")"); }); }
   if(s.ferry) warn.push("フェリーの時刻を確認");
   return {spot:s,score:sc,dist:dk,why:why,warn:warn,kind:k};
 }
