@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028b">
+<link rel="stylesheet" href="css/style.css?v=20261028c">
 </head>
 <body>
 <div class="wrap">
@@ -68,25 +68,25 @@
 
 <section class="pick" id="pick" aria-live="polite"></section>
 
-<section class="tide">
-  <h2 id="tideH">潮と時間帯</h2>
+<details class="tide fold" id="tideBox">
+  <summary><h2 id="tideH">潮と時間帯</h2></summary>
   <div id="tideSvg"></div>
   <div class="legend">
     <span><i class="sw" style="background:var(--sea)"></i>潮位</span>
     <span><i class="sw" style="background:var(--dusk)"></i>マヅメ</span>
     <span><i class="sw" style="background:var(--buoy)"></i>狙い目</span>
   </div>
-</section>
+</details>
 
 <section>
   <h2>円の中の順位</h2>
   <div class="rank" id="rank"></div>
 </section>
 
-<section>
-  <h2>釣果の記録</h2>
+<details class="fold" id="logBox">
+  <summary><h2 id="logSum">釣果の記録</h2></summary>
   <div id="logList"></div>
-</section>
+</details>
 
 <details class="panel" id="grpPanel">
   <summary>仲間とポイントを共有</summary>
@@ -117,7 +117,7 @@
 </details>
 
 <section>
-  <h2>ポイント図鑑</h2>
+  <h2>ポイント図鑑 <span class="src">(名前を押すと開きます)</span></h2>
   <div class="spots" id="spotsIn"></div>
   <details class="outer" id="outerBox"><summary id="outerSum"></summary><div class="spots" id="spotsOut"></div></details>
 </section>
@@ -149,10 +149,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028b"></script>
-<script src="js/engine.js?v=20261028b"></script>
-<script src="js/wx.js?v=20261028b"></script>
-<script src="js/store.js?v=20261028b"></script>
-<script src="js/app.js?v=20261028b"></script>
+<script src="firebase-config.js?v=20261028c"></script>
+<script src="js/engine.js?v=20261028c"></script>
+<script src="js/wx.js?v=20261028c"></script>
+<script src="js/store.js?v=20261028c"></script>
+<script src="js/app.js?v=20261028c"></script>
 </body>
 </html>

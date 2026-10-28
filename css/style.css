@@ -176,3 +176,17 @@ footer a{color:inherit}
 .leaflet-container .leaflet-tile-pane{filter:none}
 .pin{width:26px;height:26px;font-size:13px}
 .pin.top{width:34px;height:34px;font-size:15px}
+
+details.fold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+details.fold>summary::-webkit-details-marker,details.spot>summary::-webkit-details-marker{display:none}
+details.fold>summary h2{margin:0}
+details.fold>summary::after,details.spot>summary::after{content:"＋";margin-left:auto;color:var(--sub);font-weight:700}
+details.fold[open]>summary::after,details.spot[open]>summary::after{content:"－"}
+details.fold[open]>summary{margin-bottom:8px}
+details.spot>summary{cursor:pointer;list-style:none;display:flex;align-items:center}
+details.spot>summary h3{flex:1;min-width:0}
+details.spot[open]>summary{margin-bottom:6px}
+.pick details.more>summary{cursor:pointer;color:var(--sea);font-size:.9rem;font-weight:700}
+.pick details.more[open]>summary{margin-bottom:6px}
+.castline{font-size:.9rem}
+.castline .lbl{margin-right:6px}
