@@ -175,10 +175,10 @@ function rankGeneric(c,s,center,radiusKm){
   }
   if(m.waveMax&&c.wave_m!=null&&c.wave_m>m.waveMax){ sc-=5; warn.push("波が"+c.wave_m+"mあり、足場の低い磯は危ない"); }
   else if(c.wave_m!=null&&c.wave_m>=2) warn.push("波が高い。港内側だけにする");
-  var t=c.tide_name, big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
-  if(m.tide==="strong"||m.tide==="move"){ if(big){ sc+=(m.tide==="strong"?6:4); why.push(t+"で潮がよく動く"); } if(small) sc-=2; }
-  else if(m.tide==="gentle"){ if(small){ sc+=3; why.push(t+"で潮が緩く、釣りやすい"); } if(t==="大潮") sc-=1; }
-  else if(m.tide==="rising"){ if(big){ sc+=3; why.push(t+"で満ち込みがはっきりしている"); } }
+  var t=c.tide_class||c.tide_name, tL=(c.tide_range!=null?"干満差"+Math.round(c.tide_range)+"cm"+(c.tide_station?"("+c.tide_station+")":""):t), big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
+  if(m.tide==="strong"||m.tide==="move"){ if(big){ sc+=(m.tide==="strong"?6:4); why.push(tL+"で潮がよく動く"); } if(small) sc-=2; }
+  else if(m.tide==="gentle"){ if(small){ sc+=3; why.push(tL+"で潮が緩く、釣りやすい"); } if(t==="大潮") sc-=1; }
+  else if(m.tide==="rising"){ if(big){ sc+=3; why.push(tL+"で満ち込みがはっきりしている"); } }
   if(s.current==="fast"&&m.tide==="gentle"){ sc-=3; }
   if(m.season.indexOf(c.month)>=0){ sc+=4; why.push(c.month+"月は"+m.name+"のシーズン"); } else { sc-=4; warn.push(c.month+"月はシーズン外で数は期待しにくい"); }
   if(m.rainBonus&&c.rain_max!=null&&c.rain_max>=1&&c.rain_max<5){ sc+=2; why.push("雨で濁りが入りやすい"); }
@@ -189,8 +189,9 @@ function rankGeneric(c,s,center,radiusKm){
 function howFor(c,s){ var m=methodOf(c); if(!m.how) return s.how||""; return m.how[spotKind(s)]||m.how["default"]; }
 
 /* 円の中のポイントに点数と理由を付ける。spots は円の中だけを渡す */
-function rankSpots(c,spots,center,radiusKm){
+function rankSpots(base,spots,center,radiusKm){
   var out=spots.map(function(s){
+    var c=base.condFor?base.condFor(s):base;
     if((c.method||"eging")!=="eging") return rankGeneric(c,s,center,radiusKm);
     var eg=s.eging||2, sh=(s.shelter==null?1:s.shelter);
     var dk=center?distKm(center,s):0;
@@ -211,13 +212,13 @@ function rankSpots(c,spots,center,radiusKm){
       else if(ws>=7&&sh<2) warn.push("風が強め。足場の高い沖側は避ける");
     }
     if(s._open){ var ca=castAdvice(s._open,c,s); if(ca&&ca.best!=null&&ws!=null&&ws>4){ if(ca.rel==="tail"){sc+=3;why.push("投げる向きが追い風になる");} else if(ca.rel==="head"&&ca.alt==null){sc-=3;warn.push("どの向きに投げても向かい風になりやすい");} } }
-    var t=c.tide_name, big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
+    var t=c.tide_class||c.tide_name, tL=(c.tide_range!=null?"干満差"+Math.round(c.tide_range)+"cm"+(c.tide_station?"("+c.tide_station+")":""):t), big=(t==="大潮"||t==="中潮"), small=(t==="小潮"||t==="長潮"||t==="若潮");
     if(s.current==="fast"||s.current==="complex"){
       if(t==="大潮"){ sc-=5; warn.push("大潮は流れが速すぎることがある"); }
-      if(small){ sc+=8; why.push(t+"で潮が緩い日は、潮の速い場所が有利"); }
+      if(small){ sc+=8; why.push(tL+"で潮が緩い日は、潮の速い場所が有利"); }
       if(t==="中潮"){ sc+=3; why.push("中潮でほどよく潮が動く"); }
     } else {
-      if(big){ sc+=6; why.push(t+"で潮がよく動く"); }
+      if(big){ sc+=6; why.push(tL+"で潮がよく動く"); }
       if(small){ sc-=2; }
     }
     var se=season(c.month);

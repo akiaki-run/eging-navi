@@ -50,10 +50,50 @@ var Wx=(function(){
   function loadStations(){ if(stations) return Promise.resolve(stations); if(stLoading) return stLoading;
     stLoading=fetchJson("data/tide/stations.json").then(function(s){ stations=s; return s; }).catch(function(){ stLoading=null; return null; }); return stLoading; }
   function nearestStation(ll){ if(!stations) return null; var b=null,bd=1e9; stations.forEach(function(s){ var d=distKm(ll,{lat:s[2],lng:s[3]}); if(d<bd){bd=d;b=s;} }); return b?{code:b[0],name:b[1],lat:b[2],lng:b[3],dist:bd}:null; }
+  var tideMonths={};
+  function tideInfo(code,dateKey){
+    var m=tideMonths[code+"/"+dateKey.slice(0,7)]; if(!m) return null;
+    var day=m[dateKey.slice(8,10)]; if(!day) return null;
+    if(m._mean==null){ var rs=[]; Object.keys(m).forEach(function(k){ var d=m[k]; if(!d||!d.hi) return; var his=d.hi.map(function(e){return e[1];}), los=d.lo.map(function(e){return e[1];}); if(his.length&&los.length) rs.push(Math.max.apply(null,his)-Math.min.apply(null,los)); }); m._mean=rs.length?rs.reduce(function(a,b){return a+b;},0)/rs.length:null; }
+    var his=day.hi.map(function(e){return e[1];}), los=day.lo.map(function(e){return e[1];});
+    var range=(his.length&&los.length)?Math.max.apply(null,his)-Math.min.apply(null,los):null;
+    return {day:day,range:range,mean:m._mean};
+  }
   function tideDay(code,dateKey){
     var ym=dateKey.slice(0,7), k=code+"/"+ym;
     if(!tideCache[k]) tideCache[k]=fetchJson("data/tide/"+code+"/"+ym+".json").catch(function(){ delete tideCache[k]; return null; });
-    return tideCache[k].then(function(m){ return m?m[dateKey.slice(8,10)]||null:null; });
+    return tideCache[k].then(function(m){ if(m) tideMonths[k]=m; return m?m[dateKey.slice(8,10)]||null:null; });
   }
-  return {forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
+  /* ポイントごとの予報:0.1度(約10km)のマス目ごとにまとめて取る */
+  var cellCache={};
+  function cellKey(lat,lng){ return (Math.round(lat*20)/20).toFixed(2)+","+(Math.round(lng*20)/20).toFixed(2); }
+  function parseOne(w,mar){
+    var days={};
+    w.hourly.time.forEach(function(t,i){ var d=t.slice(0,10), h=+t.slice(11,13);
+      var o=days[d]=days[d]||{speed:[],dir:[],gust:[],rain:[],code:[],wave:[]};
+      o.speed[h]=w.hourly.wind_speed_10m[i]; o.dir[h]=w.hourly.wind_direction_10m[i]; o.gust[h]=w.hourly.wind_gusts_10m[i]; o.rain[h]=w.hourly.precipitation[i]; o.code[h]=w.hourly.weather_code[i]; });
+    if(mar&&mar.hourly&&mar.hourly.wave_height){ mar.hourly.time.forEach(function(t,i){ var d=t.slice(0,10); if(days[d]) days[d].wave[+t.slice(11,13)]=mar.hourly.wave_height[i]; }); }
+    return days;
+  }
+  function forecastCells(points){
+    var need=[], keys={};
+    points.forEach(function(p){ var k=cellKey(p.lat,p.lng); if(keys[k]) return; keys[k]=1; var c=cellCache[k]; if(!c||(Date.now()-c.at>30*60*1000&&!c.p)) need.push(k); });
+    need=need.slice(0,200);
+    if(!need.length) return Promise.resolve(false);
+    var chunks=[]; for(var i=0;i<need.length;i+=50) chunks.push(need.slice(i,i+50));
+    var all=Promise.all(chunks.map(function(ch){
+      var la=ch.map(function(k){return k.split(",")[0];}).join(","), lo=ch.map(function(k){return k.split(",")[1];}).join(",");
+      var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=3");
+      var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height&timezone=Asia%2FTokyo&forecast_days=3").catch(function(){ return null; });
+      return Promise.all([f,m]).then(function(r){
+        var ws=Array.isArray(r[0])?r[0]:[r[0]], ms=r[1]?(Array.isArray(r[1])?r[1]:[r[1]]):[];
+        ch.forEach(function(k,i){ if(ws[i]&&ws[i].hourly) cellCache[k]={at:Date.now(),days:parseOne(ws[i],ms[i])}; });
+        return true;
+      }).catch(function(){ ch.forEach(function(k){ if(cellCache[k]&&cellCache[k].p) delete cellCache[k]; }); return false; });
+    })).then(function(r){ return r.some(Boolean); });
+    need.forEach(function(k){ cellCache[k]={at:Date.now(),p:all}; });
+    return all;
+  }
+  function cellDays(lat,lng){ var c=cellCache[cellKey(lat,lng)]; return c&&c.days?c.days:null; }
+  return {tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
 })();
