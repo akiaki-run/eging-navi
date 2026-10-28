@@ -411,19 +411,28 @@ fetch("data/tide/ports.json").then(function(r){ if(!r.ok) throw 0; return r.json
 var osmCache={}, osmSeq=0, osmT=null;
 function scheduleBeaches(){ clearTimeout(osmT); osmT=setTimeout(loadBeaches,700); }
 function townShort(p){ var near=(nearestTown(p)||((nearestPlace(p)||{}).name)||"").replace(/^(北海道|東京都|大阪府|京都府|.{2,3}県)/,""); var sh=near.replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""); return {full:near,short:sh||near}; }
+var OVERPASS=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://overpass.private.coffee/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+function overpass(q,i){
+  i=i||0;
+  return fetch(OVERPASS[i],{method:"POST",body:"data="+encodeURIComponent(q),headers:{"Content-Type":"application/x-www-form-urlencoded"}})
+    .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
+    .catch(function(err){ if(i+1<OVERPASS.length) return new Promise(function(ok){ setTimeout(ok,800); }).then(function(){ return overpass(q,i+1); }); throw err; });
+}
+function osmKey(c,r){ var g=r<=8?0.05:(r<=15?0.1:0.2); return "osm2."+(Math.round(c.lat/g)*g).toFixed(2)+","+(Math.round(c.lng/g)*g).toFixed(2)+","+Math.ceil(r/5)*5; }
 function loadBeaches(){
-  var c=state.center, r=Math.min(radius(),25), key=c.lat.toFixed(3)+","+c.lng.toFixed(3)+","+r, my=++osmSeq;
+  var c=state.center, r=Math.min(radius(),20), key=osmKey(c,r), my=++osmSeq;
   if(osmCache[key]){ state.beaches=osmCache[key].beaches; state.osm=osmCache[key].osm; state.beachMsg=""; render(); return; }
+  try{ var sv=JSON.parse(localStorage.getItem(key)||"null"); if(sv&&Date.now()-sv.at<7*864e5){ osmCache[key]=sv.d; state.beaches=sv.d.beaches; state.osm=sv.d.osm; state.beachMsg=""; render(); return; } }catch(e){}
   state.beachMsg="港・堤防・砂浜を地図データから探しています…"; render();
   var kx=111.32*Math.cos(c.lat*Math.PI/180), pc=prefsIn(c.lng-(r+2)/kx,c.lat-(r+2)/110.6,c.lng+(r+2)/kx,c.lat+(r+2)/110.6); if(pc.length<=8) pc.forEach(loadTowns);
-  var A='(around:'+Math.round(r*1000)+','+c.lat.toFixed(5)+','+c.lng.toFixed(5)+')';
-  var q='[out:json][timeout:30];('+
-    'nwr["natural"="beach"]'+A+';'+
-    'nwr["harbour"]'+A+';nwr["leisure"="marina"]'+A+';nwr["landuse"~"^(harbour|port)$"]'+A+';nwr["seamark:type"="harbour"]'+A+';'+
-    'nwr["man_made"~"^(breakwater|pier|groyne)$"]'+A+';nwr["leisure"="fishing"]'+A+';'+
-    ');out center tags 600;';
-  fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q),headers:{"Content-Type":"application/x-www-form-urlencoded"}})
-    .then(function(res){ if(!res.ok) throw new Error("HTTP "+res.status); return res.json(); })
+  var g=r<=8?0.05:(r<=15?0.1:0.2), cl=Math.round(c.lat/g)*g, cg=Math.round(c.lng/g)*g, R=Math.ceil(r/5)*5+g*80;
+  var B="("+(cl-R/110.6).toFixed(4)+","+(cg-R/kx).toFixed(4)+","+(cl+R/110.6).toFixed(4)+","+(cg+R/kx).toFixed(4)+")";
+  var q='[out:json][timeout:25];('+
+    'nwr["natural"="beach"]'+B+';'+
+    'nwr["harbour"]'+B+';nwr["leisure"~"^(marina|fishing)$"]'+B+';nwr["landuse"="harbour"]'+B+';'+
+    'way["man_made"~"^(breakwater|pier|groyne)$"]'+B+';'+
+    ');out center tags qt 500;';
+  overpass(q)
     .then(function(j){
       if(my!==osmSeq) return;
       var beaches=[], osm=[], fixed=SPOTS.concat(portSpots());
@@ -449,10 +458,11 @@ function loadBeaches(){
           light:tg.lit==="yes",feat:label+"。"+(tg.lit==="yes"?"照明あり。":""),note:"OpenStreetMapの情報。立入禁止・釣り禁止の場所がないか現地で確認。"});
       });
       osmCache[key]={beaches:beaches,osm:osm}; state.beaches=beaches; state.osm=osm;
+      try{ localStorage.setItem(key,JSON.stringify({at:Date.now(),d:osmCache[key]})); }catch(e){}
       state.beachMsg=(METHODS[state.method].needSand&&!beaches.length)?"この範囲には地図データ上の砂浜が見つかりませんでした。砂地のポイントは「タップでポイントを追加」で「砂地」にチェックして登録できます。":"";
       render();
     })
-    .catch(function(e){ if(my!==osmSeq) return; state.beaches=[]; state.osm=[]; state.beachMsg="地図データ(港・堤防・砂浜)を取得できませんでした("+(e&&e.message||e)+")。少しあとで地図を動かすと再取得します。"; render(); });
+    .catch(function(e){ if(my!==osmSeq) return; state.beaches=[]; state.osm=[]; state.beachMsg="地図データ(港・堤防・砂浜)の問い合わせ先が混んでいて取得できませんでした。国の漁港データと地形からの候補だけで出しています。1分後にもう一度試します。"; render(); setTimeout(function(){ if(my===osmSeq) loadBeaches(); },60000); });
 }
 var PREFS=["","北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
 function centerPlace(){ var best=null,bd=4,bk=null; Object.keys(towns).forEach(function(k){ (towns[k]||[]).forEach(function(tw){ if(Math.abs(tw[1]-state.center.lat)>0.05||Math.abs(tw[2]-state.center.lng)>0.06)return; var d=distKm(state.center,{lat:tw[1],lng:tw[2]}); if(d<bd){bd=d;best=tw[0];bk=k;} }); });
