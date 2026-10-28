@@ -79,6 +79,7 @@ var Store=(function(){
     putLocal("spots",id,null); return Promise.resolve(); }
   function savePos(id,ll){ if(cloudReady()) return u().collection("spotpos").doc(id).set(ll); putLocal("pos",id,ll); return Promise.resolve(); }
   function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return u().collection("catches").doc(id).set(rec); putLocal("catches",id,rec); return Promise.resolve(); }
+  function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return u().collection("catches").doc(id).set(patch,{merge:true}); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
   function deleteCatch(id){ if(cloudReady()) return u().collection("catches").doc(id).delete(); putLocal("catches",id,null); return Promise.resolve(); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
 
@@ -127,7 +128,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();

@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028j">
+<link rel="stylesheet" href="css/style.css?v=20261028l">
 </head>
 <body>
 <div class="wrap">
@@ -86,6 +86,11 @@
 <details class="fold" id="logBox">
   <summary><h2 id="logSum">釣果の記録</h2></summary>
   <div id="logList"></div>
+  <details class="more" id="impBox"><summary>過去の記録をまとめて取り込む</summary>
+    <p class="src">Claude に作ってもらった取り込み用の文字(JSON)を貼り付けて「取り込む」を押します。その日の風・波・水温・潮は自動で付けます。同じものを2回取り込んでも重複しません。</p>
+    <textarea id="impText" rows="5" style="width:100%"></textarea>
+    <div><button class="btn pri sm" id="impBtn" type="button">取り込む</button> <span class="src" id="impMsg"></span></div>
+  </details>
 </details>
 
 <details class="panel" id="grpPanel">
@@ -139,7 +144,7 @@
       <div class="wide items" id="lgItems"></div>
       <div class="wide"><button class="btn sm" id="lgAddItem" type="button">+ 魚を追加</button> <button class="btn sm" id="lgZero" type="button">ボウズで記録</button></div>
       <label>ルアー・仕掛け<input id="lgTackle" maxlength="40" placeholder="例:エギ3.5号 オレンジ金"></label>
-      <label>投げた向き<select id="lgDir"><option value="">—</option></select></label>
+      <label>投げた向き<select id="lgDir"><option value="">—</option></select> <button class="btn sm" type="button" id="lgDirMap">地図で指す</button></label>
       <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
     </div>
@@ -149,10 +154,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028j"></script>
-<script src="js/engine.js?v=20261028j"></script>
-<script src="js/wx.js?v=20261028j"></script>
-<script src="js/store.js?v=20261028j"></script>
-<script src="js/app.js?v=20261028j"></script>
+<script src="firebase-config.js?v=20261028l"></script>
+<script src="js/engine.js?v=20261028l"></script>
+<script src="js/wx.js?v=20261028l"></script>
+<script src="js/store.js?v=20261028l"></script>
+<script src="js/app.js?v=20261028l"></script>
 </body>
 </html>

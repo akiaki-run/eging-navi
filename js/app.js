@@ -157,6 +157,7 @@ function initMap(){
   map.on("moveend",loadView); loadView();
   map.on("click",function(e){
     var ll={lat:e.latlng.lat,lng:e.latlng.lng};
+    if(state.castEdit){ castTap(ll); return; }
     if(state.fixId){ savePos(state.fixId,ll); state.fixId=null; setMode("center"); return; }
     if(state.mode==="add"){ state.addAt=ll; showAdd(); return; }
     state.center=ll; ctrMarker.setLatLng(e.latlng); circle.setLatLng(e.latlng); areaChanged();
@@ -239,14 +240,14 @@ function drawPins(ranked){
     var n=rankOf[s.id], z=map.getZoom();
     if(!n&&z<11) return;
     if(n>10&&z<12) return;
-    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t){t.open=true;} if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
+    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(e){if(state.castEdit){castTap({lat:e.latlng.lat,lng:e.latlng.lng});return;} var t=document.getElementById("sp-"+s.id);if(t){t.open=true;} if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
     var cls="pin"+(n?(n===1?" top":""):" out")+(s.mine?" mine":"")+(s.auto?" auto":"")+(s.shared?" shared":"");
     var sz=n?(n===1?34:26):12;
     var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="'+cls+'">'+(n||"")+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
     var showName=n&&(n<=3||map.getZoom()>=12);
     var short=s.auto?s.name.replace(/\(.*\)$/,"").replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""):s.name; if(/^の/.test(short)) short=short.slice(1);
     m.bindTooltip(esc(showName?short:s.name),showName?{permanent:true,direction:"right",offset:[sz/2,0],className:"pinlabel"}:{direction:"top",offset:[0,-sz/2]});
-    m.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t){ t.open=true; if(t.parentElement.closest("details"))t.parentElement.closest("details").open=true; t.scrollIntoView({behavior:"smooth",block:"center"});}});
+    m.on("click",function(e){if(state.castEdit){castTap({lat:s.lat,lng:s.lng});return;} var t=document.getElementById("sp-"+s.id);if(t){ t.open=true; if(t.parentElement.closest("details"))t.parentElement.closest("details").open=true; t.scrollIntoView({behavior:"smooth",block:"center"});}});
     spotLayer.addLayer(m);
   });
 }
@@ -332,9 +333,9 @@ function genAuto(){
 /* ===== 釣果の記録 ===== */
 var logSpotId=null;
 function recItems(x){ if(x.items) return x.items; return x.count>0?[{kind:x.kind||"アオリイカ",count:x.count,size:x.max_g?x.max_g+"g":""}]:[]; }
-function logStats(id){
+function logStats(id,sp){
   var m=METHODS[state.method], t=0,h=0,n=0, all={};
-  state.catches.forEach(function(x){ if(x.spot_id!==id) return;
+  state.catches.forEach(function(x){ if(x.spot_id!==id&&!(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.004&&distKm(x,sp)<0.3)) return;
     var its=recItems(x), mine=its.filter(function(it){ return it.count>0&&fishHit([it.kind],m); });
     its.forEach(function(it){ if(it.count>0) all[it.kind]=(all[it.kind]||0)+it.count; });
     if((x.method||"eging")===state.method||mine.length){ t++; if(mine.length){ h++; mine.forEach(function(it){ n+=it.count; }); } } });
@@ -411,6 +412,54 @@ function saveLog(){
   chain.then(function(){ return Store.addCatch(rec); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
     .then(function(){ document.getElementById("lgSave").disabled=false; });
 }
+
+/* ===== 過去の記録の取り込み(その日の天気・波・水温・潮を過去のデータから付ける) ===== */
+function pastCond(r){
+  var j=new Date(new Date(r.at).getTime()+9*36e5), key=j.toISOString().slice(0,10), h=j.getUTCHours()+j.getUTCMinutes()/60, hi=Math.floor(h);
+  var la=r.lat.toFixed(3), lo=r.lng.toFixed(3), q="latitude="+la+"&longitude="+lo+"&start_date="+key+"&end_date="+key+"&timezone=Asia%2FTokyo";
+  var f=fetch("https://historical-forecast-api.open-meteo.com/v1/forecast?"+q+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m&daily=sunrise,sunset&wind_speed_unit=ms").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
+  var m=fetch("https://marine-api.open-meteo.com/v1/marine?"+q+"&hourly=wave_height,sea_surface_temperature").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
+  var t=Wx.loadStations().then(function(){ var st=Wx.nearestStation(r); if(!st) return null; return Wx.tideDay(st.code,key).then(function(d){ return d?{st:st,d:d,info:Wx.tideInfo(st.code,key)}:null; }); }).catch(function(){return null;});
+  return Promise.all([f,m,t]).then(function(a){
+    var w=a[0], mar=a[1], td=a[2], out={past:true};
+    if(w&&w.hourly){ var day={speed:w.hourly.wind_speed_10m,dir:w.hourly.wind_direction_10m,gust:w.hourly.wind_gusts_10m,rain:w.hourly.precipitation,code:w.hourly.weather_code,wave:[]};
+      if(mar&&mar.hourly&&mar.hourly.wave_height) day.wave=mar.hourly.wave_height;
+      var sm=Wx.summarize(day,hi,hi); if(sm){ out.weather=sm.weather; out.wind_dir=sm.wind_dir; out.wind_ms=sm.wind_ms; out.gust=sm.gust; if(sm.wave_m!=null) out.wave_m=sm.wave_m; }
+      if(w.hourly.temperature_2m&&w.hourly.temperature_2m[hi]!=null) out.air_c=w.hourly.temperature_2m[hi];
+      if(w.daily&&w.daily.sunrise){ var sr=w.daily.sunrise[0].slice(11,16), ss=w.daily.sunset[0].slice(11,16); out.sunrise=sr; out.sunset=ss;
+        if(Math.abs(h-hm2h(sr))<=1) out.mazume="朝マヅメ"; else if(Math.abs(h-hm2h(ss))<=1) out.mazume="夕マヅメ"; else out.mazume=(h<hm2h(sr)||h>hm2h(ss))?"夜":"日中"; } }
+    if(mar&&mar.hourly&&mar.hourly.sea_surface_temperature&&mar.hourly.sea_surface_temperature[hi]!=null) out.sst_c=Math.round(mar.hourly.sea_surface_temperature[hi]*10)/10;
+    if(td){ var dd=td.d, cv=tideCurve(dd.hi.map(function(e){return {type:"満潮",time:e[0],cm:e[1]};}).concat(dd.lo.map(function(e){return {type:"干潮",time:e[0],cm:e[1]};})));
+      if(cv){ var near=cv.events.some(function(e){return Math.abs(e.t-h)<0.67;}); out.tide_phase=near?"潮止まり前後":(cv.at(h+0.25)>cv.at(h-0.25)?"上げ潮":"下げ潮"); out.tide_cm=Math.round(cv.at(h)); }
+      out.tide_station=td.st.name; if(td.info&&td.info.range!=null){ out.tide_range=td.info.range; if(td.info.mean) out.tide_class=td.info.range>=td.info.mean*1.15?"大きい":td.info.range<=td.info.mean*0.8?"小さい":"ふつう"; } }
+    var noon=new Date(Date.UTC(j.getUTCFullYear(),j.getUTCMonth(),j.getUTCDate(),3)); out.tide_name=tideNameFromAge(moonAge(noon)); out.moon_age=Math.round(moonAge(noon)*10)/10;
+    return out;
+  });
+}
+function importRecords(){
+  var msg=document.getElementById("impMsg"), txt=document.getElementById("impText").value.trim(), list;
+  if(!txt){ msg.textContent="取り込む文字を貼り付けてください。"; return; }
+  try{ list=JSON.parse(txt); if(!Array.isArray(list)) list=[list]; }catch(e){ msg.textContent="読み取れませんでした。貼り付けた文字をそのまま確認してください。"; return; }
+  var have={}; state.catches.forEach(function(x){ if(x.imp) have[x.imp]=1; });
+  var todo=list.filter(function(r){ return r&&r.at&&r.lat!=null&&r.lng!=null&&!have[r.imp]; });
+  if(!todo.length){ msg.textContent="新しく取り込む記録はありません(取り込み済み)。"; return; }
+  var btn=document.getElementById("impBtn"); btn.disabled=true; var done=0, spotsMade={};
+  var chain=Promise.resolve();
+  todo.forEach(function(r){ chain=chain.then(function(){
+    msg.textContent="取り込み中… "+done+"/"+todo.length;
+    var fixed=SPOTS.filter(function(s){ return distKm(s,r)<0.3; })[0], sid=fixed?fixed.id:(r.spot_id||("imp_"+(r.name||"").replace(/[^\w぀-鿿]/g,"")));
+    var pre=Promise.resolve();
+    if(!fixed&&!spotsMade[sid]&&!state.mine.some(function(s){return s.id===sid;})){ spotsMade[sid]=1;
+      pre=Store.saveSpot(sid,{name:r.name,note:r.spot_note||"",lat:r.lat,lng:r.lng,createdAt:new Date().toISOString(),from_import:true}); }
+    return pre.then(function(){ return pastCond(r); }).then(function(cond){
+      var items=r.items||[], rec={spot_id:sid,spot_name:fixed?fixed.name:r.name,lat:r.lat,lng:r.lng,at:new Date(r.at).toISOString(),method:r.method||"eging",items:items,
+        count:items.reduce(function(a,b){return a+(b.count||0);},0),kind:items[0]?items[0].kind:"",tackle:r.tackle||"",cast_dir:r.cast_dir||null,memo:r.memo||"",cond:cond,imp:r.imp||null,createdAt:new Date().toISOString()};
+      return Store.addCatch(rec); }).then(function(){ done++; });
+  }); });
+  chain.then(function(){ msg.textContent=done+"件を取り込みました。"; document.getElementById("impText").value=""; })
+    .catch(function(e){ console.warn(e); msg.textContent="途中で止まりました("+done+"件まで取り込み済み)。もう一度押すと続きから取り込みます。"; })
+    .then(function(){ btn.disabled=false; });
+}
 function renderLog(){
   var el=document.getElementById("logList"); if(!el) return;
   if(!state.catches.length){ el.innerHTML='<div class="empty">まだ記録はありません。ポイントのカードにある「釣果を記録」から入れられます。釣れなかった日も「ボウズで記録」で残すと、順位づけに使えます。</div>'; return; }
@@ -418,12 +467,15 @@ function renderLog(){
   var ls=document.getElementById("logSum"); if(ls) ls.textContent="釣果の記録("+state.catches.length+"回)";
   el.innerHTML='<div class="logsum">'+state.catches.length+'回の釣行で、'+hits+'回釣れた'+(Object.keys(all).length?'('+esc(fishSummary(all))+')':'')+'</div>'+state.catches.slice(0,30).map(function(x){
     var its=recItems(x), mname=(METHODS[x.method||"eging"]||{}).name||"";
-    var cd=x.cond||{}, cond=[cd.weather,cd.wind_dir?(cd.wind_dir+" "+(cd.wind_ms!=null?cd.wind_ms+"m":"")):"",cd.tide_name,cd.tide_phase,cd.mazume].filter(Boolean).join("・");
+    var cd=x.cond||{}, cond=[cd.weather,cd.wind_dir?(cd.wind_dir+" "+(cd.wind_ms!=null?cd.wind_ms+"m":"")):"",cd.tide_name,cd.tide_phase,cd.mazume,cd.sst_c!=null?"水温"+cd.sst_c+"℃":""].filter(Boolean).join("・");
     var itxt=its.map(function(it){ var u=/イカ/.test(it.kind)?"杯":"匹"; return esc(it.kind)+' '+it.count+u+(it.size?'('+esc(it.size)+')':''); }).join("、");
     return '<div class="logrow"><div class="lt num">'+fmtAt(x.at)+'</div><div class="lb"><b>'+esc(x.spot_name)+'</b> <span class="cnt'+(its.length?'':' zero')+'">'+(its.length?esc(mname):"ボウズ")+'</span> '+itxt+
       '<small>'+esc([x.tackle||"",x.egi_size?"エギ"+x.egi_size+"号":"",x.egi_color||"",x.cast_dir?x.cast_dir+"へ投げた":""].filter(Boolean).join(" ・ "))+(cond?' / '+esc(cond):'')+(x.memo?' / '+esc(x.memo):'')+'</small></div>'+
-      '<button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></div>';
+      '<span><button class="btn sm" data-lgcast="'+esc(x.id)+'">'+(x.cast_dir?'向きを直す':'地図で向き')+'</button> <button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></span></div>';
   }).join("");
+  Array.prototype.forEach.call(el.querySelectorAll("[data-lgcast]"),function(b){ b.onclick=function(){
+    var x=state.catches.filter(function(c){return c.id===b.dataset.lgcast;})[0]; if(!x||x.lat==null) return;
+    var o={lat:x.lat,lng:x.lng}; startCast({id:x.id,phase:"pos",from:o,orig:o}); }; });
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgdel]"),function(b){ b.onclick=function(){
     if(b.dataset.armed){ Store.deleteCatch(b.dataset.lgdel).catch(function(){}); } else { b.dataset.armed="1"; b.textContent="もう一度押すと削除"; } }; });
 }
@@ -561,7 +613,7 @@ function render(){
   else { src.className="src manual"; src.textContent=state.wxErr?"天気予報を取得できませんでした("+state.wxErr+")。潮名と日の出入りは計算値です。風は「条件を自分で変える」から入れられます。":"天気予報を読み込んでいます…"; }
   document.getElementById("tideH").textContent="潮と時間帯"+(c.tide_station?"("+c.tide_station+"の潮位・目安)":"");
 
-  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,300); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id);return st?Object.assign({},s,{log:st}):s;});
+  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,300); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id,s);return st?Object.assign({},s,{log:st}):s;});
   loadSpotWx(cand);
   var ranked=rankSpots(c,cand,state.center,radius());
   drawPins(ranked);
@@ -744,7 +796,30 @@ function bindShare(){
     var pre=(on&&s.auto)?Store.saveSpot(s.id,{name:s.name,note:s.note||"",lat:s.lat,lng:s.lng,eging:s.eging,current:s.current,kind:s.kind,feat:s.feat,how:s.how,open:s.open||null,createdAt:new Date().toISOString(),from_auto:true}):Promise.resolve();
     pre.then(function(){ return Store.shareSpot(b.dataset.share,s,on); }).catch(function(e){ alertMsg("共有できませんでした:"+(e&&e.message||e)); }); }; });
 }
-function alertMsg(t){ var el=document.getElementById("toast"); el.textContent=t; el.hidden=false; clearTimeout(alertMsg.t); alertMsg.t=setTimeout(function(){el.hidden=true;},4000); }
+function alertMsg(t,ms){ var el=document.getElementById("toast"); el.textContent=t; el.hidden=false; clearTimeout(alertMsg.t); alertMsg.t=setTimeout(function(){el.hidden=true;},ms||4000); }
+/* ===== 地図で、釣った場所と投げた向きを指す ===== */
+var castLayer=null;
+function bearing(a,b){ var dx=(b.lng-a.lng)*Math.cos(a.lat*Math.PI/180), dy=b.lat-a.lat; return (Math.atan2(dx,dy)*180/Math.PI+360)%360; }
+function castMark(from,to){ if(castLayer) castLayer.remove(); castLayer=L.layerGroup().addTo(map);
+  L.circleMarker([from.lat,from.lng],{radius:7,color:"#fff",weight:2,fillColor:"#e8a317",fillOpacity:1,interactive:false}).addTo(castLayer);
+  if(to) L.polyline([[from.lat,from.lng],[to.lat,to.lng]],{color:"#e8a317",weight:4,dashArray:"6 5",interactive:false}).addTo(castLayer); }
+function startCast(ed){
+  state.castEdit=ed; document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"});
+  map.setView([ed.from.lat,ed.from.lng],Math.max(map.getZoom(),16)); castMark(ed.from,null);
+  alertMsg(ed.phase==="pos"?"釣った場所をタップしてください(黄色の印のままでよければ、その印の上をタップ)":"投げた先の海をタップしてください",15000);
+}
+function castTap(ll){
+  var ed=state.castEdit;
+  if(ed.phase==="pos"){ ed.from=ll; ed.phase="dir"; castMark(ll,null); alertMsg("次に、投げた先の海をタップしてください",15000); return; }
+  var deg=bearing(ed.from,ll), dir=DIRS16[Math.round(deg/22.5)%16]; castMark(ed.from,ll); state.castEdit=null;
+  setTimeout(function(){ if(castLayer){ castLayer.remove(); castLayer=null; } },4000);
+  if(ed.sheet){ document.getElementById("lgDir").value=dir; document.getElementById("logSheet").hidden=false; alertMsg(dir+"向きにしました"); return; }
+  var patch={cast_dir:dir,cast_deg:Math.round(deg)};
+  if(distKm(ed.from,ed.orig)>0.02){ patch.lat=ed.from.lat; patch.lng=ed.from.lng;
+    var x=state.catches.filter(function(c){return c.id===ed.id;})[0], sp=x&&state.mine.filter(function(m){return m.id===x.spot_id&&m.from_import;})[0];
+    if(sp){ var body={}; Object.keys(sp).forEach(function(k){ if(["id","mine","_open","log","moved","open"].indexOf(k)<0) body[k]=sp[k]; }); body.lat=ed.from.lat; body.lng=ed.from.lng; Store.saveSpot(sp.id,body).catch(function(){}); } }
+  Store.updateCatch(ed.id,patch).then(function(){ alertMsg(dir+"向きで保存しました"); }).catch(function(){ alertMsg("保存できませんでした"); });
+}
 function renderGroups(){
   var el=document.getElementById("grpList"), form=document.getElementById("grpForm"); if(!el) return;
   if(Store.mode!=="cloud"){ el.innerHTML='<div class="empty">仲間との共有は、ログインすると使えます。</div>'; form.hidden=true; return; }
@@ -845,6 +920,8 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   Store.on("auth",function(){ renderAuth(); renderGroups(); render(); });
   Store.on("spots",function(list){ state.mine=list.map(function(x){ var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{mine:true}); if(x.open) openCache[okey(o)]=x.open; return o; });
     var ids={}; state.mine.forEach(function(s){ids[s.id]=1;}); state.auto=state.auto.filter(function(s){return !ids[s.id];}); render(); });
+  var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=allSpots().filter(function(x){return x.id===logSpotId;})[0]; if(!s) return; document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
+  var ib=document.getElementById("impBtn"); if(ib) ib.onclick=importRecords;
   Store.on("catches",function(list){ state.catches=list.slice().sort(function(a,b){return (b.at||"")>(a.at||"")?1:-1;}); render(); });
   Store.on("pos",function(p){ state.pos=p||{}; render(); });
   Store.on("groups",function(g){ state.groups=g||[]; renderGroups(); render(); });
