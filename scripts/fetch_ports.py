@@ -94,11 +94,31 @@ def parse_geojson(data):
             continue
         lng, lat = geo["coordinates"][:2]
         p = f.get("properties") or {}
-        name = p.get("C09_003") or p.get("漁港名") or p.get("fishingPortName") or ""
-        typ = p.get("C09_005") or p.get("種別") or 0
+        name, typ = pick_name_type(p)
         if name:
-            out.append([str(name), lat, lng, int(typ) if str(typ).isdigit() else 0])
+            out.append([name, lat, lng, typ])
     return out
+
+
+def pick_name_type(rec):
+    """欄の並びに頼らず、中身から漁港名と種別を見分ける。
+    漁港コードは7桁(都道府県2桁+種類1桁+番号4桁)なので、3桁目が種別になる。"""
+    name, typ = "", 0
+    for k in ("C09_002", "C09_003", "漁港名", "fishingPortName"):
+        v = str(rec.get(k, "")).strip()
+        if v and not re.fullmatch(r"[0-9.\-]+", v):
+            name = v
+            break
+    if not name:
+        cands = [str(v).strip() for v in rec.values() if str(v).strip() and not re.fullmatch(r"[0-9.\-]+", str(v).strip())]
+        port = [v for v in cands if v.endswith("漁港") or v.endswith("港")]
+        name = (port or cands or [""])[0]
+    for v in rec.values():
+        v = str(v).strip()
+        if re.fullmatch(r"\d{7}", v):
+            typ = int(v[2]) if v[2] in "12345" else 0
+            break
+    return name, typ
 
 
 def parse_shp(zf, base):
@@ -114,15 +134,17 @@ def parse_shp(zf, base):
         try:
             r = shapefile.Reader(shp=shp, dbf=dbf, encoding=enc)
             fields = [f[0] for f in r.fields[1:]]
-            for sr in r.iterShapeRecords():
+            recs = list(r.iterShapeRecords())
+            if recs:
+                print("Shapefile の欄:", fields, "1件目:", list(recs[0].record), file=sys.stderr)
+            for sr in recs:
                 if not sr.shape.points:
                     continue
                 lng, lat = sr.shape.points[0][:2]
-                rec = dict(zip(fields, sr.record))
-                name = rec.get("C09_003") or next((v for v in rec.values() if isinstance(v, str) and v.endswith("漁港")), "")
-                typ = rec.get("C09_005", 0)
+                vals = [str(v).strip() for v in sr.record]
+                name, typ = pick_name_type(dict(zip(fields, vals)))
                 if name:
-                    out.append([str(name), lat, lng, int(typ) if str(typ).isdigit() else 0])
+                    out.append([name, lat, lng, typ])
             return out
         except Exception as e:  # noqa: BLE001
             print("Shapefile", base, enc, e, file=sys.stderr)

@@ -399,7 +399,8 @@ function portSpots(){
     if(Math.abs(p[1]-c.lat)>r/100||Math.abs(p[2]-c.lng)>r/85) return;
     var s={lat:p[1],lng:p[2]}; if(distKm(c,s)>r) return;
     if(SPOTS.some(function(x){return distKm(x,s)<0.7;})) return;
-    out.push({id:"p"+i,port:true,kind:"港",name:/港$/.test(p[0])?p[0]:p[0]+"漁港",area:(TYPE_NAME[p[3]]||"漁港")+"(国の漁港データ)",lat:p[1],lng:p[2],eging:2,current:"normal",
+    var pn=/^[0-9]+$/.test(p[0])?(townShort(s).short+"の漁港"):(/港$/.test(p[0])?p[0]:p[0]+"漁港");
+    out.push({id:"p"+i,port:true,kind:"港",name:pn,area:(TYPE_NAME[p[3]]||"漁港")+"(国の漁港データ)",lat:p[1],lng:p[2],eging:2,current:"normal",
       feat:"国土交通省の漁港データにある漁港。"+(p[3]===4?"離島や外海に面した、避難港の役割もある漁港。":""),note:"釣り禁止の場所や立入禁止の岸壁がないか、現地の看板を確認。"});
   });
   return out;
