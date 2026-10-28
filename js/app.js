@@ -378,7 +378,38 @@ function addItem(kind){
   d.querySelector(".ik").onchange=function(){ d.querySelector(".io").hidden=this.value!=="__other"; };
   d.querySelector(".x").onclick=function(){ d.remove(); };
 }
-function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; }
+function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; document.getElementById("lgPlaceRow").hidden=true; }
+var logFree=null; /* 過去の釣果:ポイントを選ばずに開いたとき {picked:場所} */
+function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filter(function(x){return x.id===logSpotId;})[0]; }
+function openPast(){
+  logFree={picked:null}; logSpotId=null;
+  document.getElementById("logSpot").textContent="(過去の釣果)";
+  document.getElementById("lgPlaceRow").hidden=false; document.getElementById("lgPlace").value=""; document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。";
+  var y=new Date(Date.now()+9*36e5-864e5); document.getElementById("lgAt").value=y.toISOString().slice(0,11)+"18:00";
+  document.getElementById("lgDir").value=""; document.getElementById("lgWater").value="";
+  document.getElementById("lgMethod").value=state.method;
+  document.getElementById("lgItems").innerHTML=""; addItem(METHODS[state.method].fish[0]);
+  document.getElementById("lgTackle").value=""; document.getElementById("lgMemo").value=""; document.getElementById("lgMsg").textContent="";
+  document.getElementById("logSheet").hidden=false; document.getElementById("lgPlace").focus();
+}
+function setPicked(p){
+  var id=p.id||(p.known?"port_"+normPlace(p.match||p.name):"imp_"+normPlace(p.name).replace(/[^\w\u3040-\u9fff]/g,""));
+  logFree.picked={id:id,name:(p.known&&p.match?p.match.replace(/\(.*$/,""):p.name),lat:p.lat,lng:p.lng,newSpot:!p.id&&!p.known};
+  document.getElementById("lgPlaceRes").innerHTML="選んだ場所:<b>"+esc(logFree.picked.name)+"</b>"+(p.match&&p.match!==logFree.picked.name?"("+esc(p.match)+")":"");
+}
+function searchPlace(){
+  var q=document.getElementById("lgPlace").value.trim(), box=document.getElementById("lgPlaceRes"); if(!q) return;
+  var w=normPlace(q), c=placeCands().filter(function(x){ var n=normPlace(x.name); return n.indexOf(w.replace(/港$/,""))>=0||w.indexOf(n.replace(/港$/,""))>=0&&n.length>=2; })
+    .sort(function(a,b){ return distKm(state.center,a)-distKm(state.center,b); }).slice(0,8)
+    .map(function(x){ return {name:x.name,lat:x.lat,lng:x.lng,id:x.id||null,known:true,match:x.name,sub:townShort(x).full}; });
+  box.textContent="探しています…";
+  fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(q)).then(function(r){return r.json();}).catch(function(){return [];}).then(function(j){
+    (j||[]).slice(0,5).forEach(function(f){ c.push({name:q,lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0],id:null,known:false,match:f.properties.title,sub:"地名"}); });
+    if(!c.length){ box.textContent="見つかりませんでした。別の書き方か、「地図でタップして選ぶ」を使ってください。"; return; }
+    box.innerHTML=c.map(function(x,i){ return '<button class="btn sm" type="button" data-pi="'+i+'" style="margin:2px">'+esc(x.match)+(x.sub?' <small>'+esc(x.sub)+'</small>':'')+'</button>'; }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pi]"),function(b){ b.onclick=function(){ setPicked(c[+b.dataset.pi]); }; });
+  });
+}
 function condAt(iso,s){
   var d=new Date(iso), j=new Date(d.getTime()+9*36e5), key=j.toISOString().slice(0,10), h=j.getUTCHours()+j.getUTCMinutes()/60, out={};
   var day=state.wx&&state.wx.days[key];
@@ -393,8 +424,8 @@ function condAt(iso,s){
   return out;
 }
 function saveLog(){
-  var s=allSpots().filter(function(x){return x.id===logSpotId;})[0], msg=document.getElementById("lgMsg");
-  if(!s) return;
+  var s=curLogSpot(), msg=document.getElementById("lgMsg");
+  if(!s){ if(logFree) msg.textContent="場所を選んでください。"; return; }
   var atLocal=document.getElementById("lgAt").value; if(!atLocal){ msg.textContent="日時を入れてください。"; return; }
   var iso=new Date(atLocal+":00+09:00").toISOString();
   var items=[];
@@ -408,6 +439,7 @@ function saveLog(){
     tackle:document.getElementById("lgTackle").value.trim(),
     cast_dir:document.getElementById("lgDir").value||null,water:document.getElementById("lgWater").value||null,memo:document.getElementById("lgMemo").value.trim(),cond:condAt(iso,s),createdAt:new Date().toISOString()};
   var chain=Promise.resolve();
+  if(s.newSpot&&!state.mine.some(function(m){return m.id===s.id;})) chain=Store.saveSpot(s.id,{name:s.name,note:"",lat:s.lat,lng:s.lng,createdAt:new Date().toISOString(),from_import:true});
   if(s.auto){ var keep={name:s.name,note:s.note||"",lat:s.lat,lng:s.lng,eging:s.eging,current:s.current,kind:s.kind,feat:s.feat,how:s.how,open:s.open||null,createdAt:new Date().toISOString(),from_auto:true};
     chain=Store.saveSpot(s.id,keep); }
   document.getElementById("lgSave").disabled=true;
@@ -883,6 +915,9 @@ function startCast(ed){
 }
 function castTap(ll){
   var ed=state.castEdit;
+  if(ed.phase==="place"){ state.castEdit=null; var near=placeCands().filter(function(x){return distKm(x,ll)<0.3;}).sort(function(a,b){return distKm(ll,a)-distKm(ll,b);})[0];
+    setPicked(near?{name:near.name,lat:near.lat,lng:near.lng,id:near.id||null,known:true,match:near.name}:{name:townShort(ll).short||"地図で選んだ場所",lat:ll.lat,lng:ll.lng,id:null,known:false});
+    document.getElementById("logSheet").hidden=false; return; }
   if(ed.phase==="pos"){ ed.from=ll; ed.phase="dir"; castMark(ll,null); alertMsg("次に、投げた先の海をタップしてください",15000); return; }
   var deg=bearing(ed.from,ll), di=Math.round(deg/22.5)%16, dir=DIRS16[di]; castMark(ed.from,ll); state.castEdit=null;
   var op=measureOpen(ed.from.lat,ed.from.lng), guess=op&&op[di]!=null?(op[di]>=1.5?"outer":"inner"):"";
@@ -994,7 +1029,11 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   Store.on("auth",function(){ renderAuth(); renderGroups(); render(); });
   Store.on("spots",function(list){ state.mine=list.map(function(x){ var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{mine:true}); if(x.open) openCache[okey(o)]=x.open; return o; });
     var ids={}; state.mine.forEach(function(s){ids[s.id]=1;}); state.auto=state.auto.filter(function(s){return !ids[s.id];}); render(); });
-  var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=allSpots().filter(function(x){return x.id===logSpotId;})[0]; if(!s) return; document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
+  var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=curLogSpot(); if(!s){ document.getElementById("lgMsg").textContent="先に場所を選んでください。"; return; } document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
+  document.getElementById("pastBtn").onclick=openPast;
+  document.getElementById("lgPlaceGo").onclick=searchPlace;
+  document.getElementById("lgPlace").onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); searchPlace(); } };
+  document.getElementById("lgPlaceMap").onclick=function(){ document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place"}; document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"}); alertMsg("釣った場所を地図でタップしてください",15000); };
   var ib=document.getElementById("impBtn"); if(ib) ib.onclick=importRecords;
   Store.on("catches",function(list){ state.catches=list.slice().sort(function(a,b){return (b.at||"")>(a.at||"")?1:-1;}); render(); });
   Store.on("pos",function(p){ state.pos=p||{}; render(); });
