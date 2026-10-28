@@ -168,9 +168,9 @@ function initMap(){
   var label=L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{maxZoom:18,maxNativeZoom:18,opacity:0.55,attribution:gsi});
   var base=lsGet("eging-base")||"std";
   ({std:std,pale:pale,photo:photo}[base]||std).addTo(map);
-  if(base==="photo"&&lsGet("eging-photolabel")!==false) label.addTo(map);
+  if(base==="photo"&&lsGet("eging-photolabel")===true) label.addTo(map);
   L.control.layers({"標準地図(地名あり)":std,"淡い地図":pale,"航空写真(浅瀬・藻場が見える)":photo},{"航空写真に地名を重ねる":label},{position:"topright"}).addTo(map);
-  map.on("baselayerchange",function(e){ var k=e.layer===photo?"photo":(e.layer===pale?"pale":"std"); lsSet("eging-base",k); if(k==="photo"&&!map.hasLayer(label)&&lsGet("eging-photolabel")!==false) label.addTo(map); if(k!=="photo"&&map.hasLayer(label)) map.removeLayer(label); });
+  map.on("baselayerchange",function(e){ var k=e.layer===photo?"photo":(e.layer===pale?"pale":"std"); lsSet("eging-base",k); if(k!=="photo"&&map.hasLayer(label)) map.removeLayer(label); });
   map.on("overlayadd",function(e){ if(e.layer===label) lsSet("eging-photolabel",true); });
   map.on("overlayremove",function(e){ if(e.layer===label) lsSet("eging-photolabel",false); });
   map.on("zoomend",function(){ drawPins(lastRanked); });
