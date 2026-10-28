@@ -356,7 +356,7 @@ function fmtAt(iso){ var d=new Date(iso); if(isNaN(d))return ""; var j=new Date(
 function localInputNow(){ var j=new Date(Date.now()+9*36e5); return j.toISOString().slice(0,16); }
 function openLog(id){
   var s=allSpots().filter(function(x){return x.id===id;})[0]; if(!s) return;
-  logSpotId=id; logFree=null; document.getElementById("lgPlaceRow").hidden=true; photoWarn();
+  logSpotId=id; logFree=null; photoWarn(); placeShow(s.name); document.getElementById("lgPlaceRes").textContent="違っていたら「修正」を押してください。";
   document.getElementById("logSpot").textContent=s.name;
   document.getElementById("lgAt").value=localInputNow();
   var o=openCache[okey(s)], ca=o?castAdvice(o,baseCond(),s):null;
@@ -392,7 +392,7 @@ function useHere(){
   m.textContent="位置を調べています…(許可を求められたら「許可」)";
   navigator.geolocation.getCurrentPosition(function(pos){
     var ll={lat:pos.coords.latitude,lng:pos.coords.longitude}, acc=Math.round(pos.coords.accuracy||0);
-    if(!logFree){ logFree={picked:null}; document.getElementById("lgPlaceRow").hidden=false; }
+    if(!logFree){ logFree={picked:null}; logSpotId=null; }
     var near=placeCands().filter(function(x){return distKm(x,ll)<0.2;}).sort(function(a,b){return distKm(ll,a)-distKm(ll,b);})[0];
     setPicked(near?{name:near.name,lat:ll.lat,lng:ll.lng,id:near.id||null,known:true,match:near.name}:{name:townShort(ll).short||"今いた場所",lat:ll.lat,lng:ll.lng,id:null,known:false});
     document.getElementById("logSpot").textContent=logFree.picked.name;
@@ -481,13 +481,13 @@ function renderTrips(){
     return '<div class="triprow"><div class="num">'+fmtAt(t.start)+'〜'+fmtAt(t.end).split(" ")[1]+'</div><div><b>'+esc(t.spot_name||"")+'</b> '+fmtDur(new Date(t.end)-new Date(t.start))+' '+(t.total?'<span>釣果'+t.total+'('+esc(fishSummary(t.fish))+')</span>':'<span class="zero">ボウズ</span>')+(c?'<br><small>'+esc(c)+'</small>':'')+(t.memo?'<br><small>'+esc(t.memo)+'</small>':'')+'</div><button class="btn sm" data-trdel="'+esc(t.id)+'">削除</button></div>'; }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-trdel]"),function(b){ b.onclick=function(){ if(b.dataset.armed){ Store.deleteTrip(b.dataset.trdel).catch(function(){}); } else { b.dataset.armed="1"; b.textContent="もう一度押すと削除"; } }; });
 }
-function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); document.getElementById("lgPlaceRow").hidden=true; }
+function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
 var logFree=null; /* 過去の釣果:ポイントを選ばずに開いたとき {picked:場所} */
 function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filter(function(x){return x.id===logSpotId;})[0]; }
 function openPast(){
   logFree={picked:null}; logSpotId=null; photoWarn();
   document.getElementById("logSpot").textContent="(過去の釣果)";
-  document.getElementById("lgPlaceRow").hidden=false; document.getElementById("lgPlace").value=""; document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。";
+  placeShow(""); document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。";
   var y=new Date(Date.now()+9*36e5-864e5); document.getElementById("lgAt").value=y.toISOString().slice(0,11)+"18:00";
   document.getElementById("lgDir").value=""; document.getElementById("lgWater").value="";
   document.getElementById("lgMethod").value=state.method;
@@ -495,10 +495,15 @@ function openPast(){
   document.getElementById("lgTackle").value=""; document.getElementById("lgMemo").value=""; document.getElementById("lgMsg").textContent="";
   document.getElementById("logSheet").hidden=false; document.getElementById("lgPlace").focus();
 }
+function placeShow(name){ var i=document.getElementById("lgPlace"), has=!!name; i.value=name||""; i.readOnly=has; document.getElementById("lgPlaceEdit").hidden=has; document.getElementById("lgPlaceFix").hidden=!has; }
+function placeFix(){ if(!logFree){ var s=curLogSpot(); logFree={picked:s?{id:s.id,name:s.name,lat:s.lat,lng:s.lng}:null}; logSpotId=null; }
+  var i=document.getElementById("lgPlace"); i.readOnly=false; document.getElementById("lgPlaceEdit").hidden=false; document.getElementById("lgPlaceFix").hidden=true; i.select(); i.focus();
+  document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。"; }
 function setPicked(p){
   var id=p.id||(p.known?"port_"+normPlace(p.match||p.name):"imp_"+normPlace(p.name).replace(/[^\w\u3040-\u9fff]/g,""));
   logFree.picked={id:id,name:(p.known&&p.match?p.match.replace(/\(.*$/,""):p.name),lat:p.lat,lng:p.lng,newSpot:!p.id&&!p.known};
-  document.getElementById("lgPlaceRes").innerHTML="選んだ場所:<b>"+esc(logFree.picked.name)+"</b>"+(p.match&&p.match!==logFree.picked.name?"("+esc(p.match)+")":"");
+  placeShow(logFree.picked.name); document.getElementById("logSpot").textContent=logFree.picked.name;
+  document.getElementById("lgPlaceRes").innerHTML=(p.match&&p.match!==logFree.picked.name?esc(p.match)+" ":"")+"違っていたら「修正」を押してください。";
 }
 function searchPlace(){
   var q=document.getElementById("lgPlace").value.trim(), box=document.getElementById("lgPlaceRes"); if(!q) return;
@@ -1157,6 +1162,7 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("lgPick").onchange=function(){ onPhoto(this.files[0],false); };
   document.getElementById("photoClose").onclick=function(){ document.getElementById("photoView").hidden=true; };
   document.getElementById("lgPlaceGo").onclick=searchPlace;
+  document.getElementById("lgPlaceFix").onclick=placeFix;
   document.getElementById("lgPlace").onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); searchPlace(); } };
   document.getElementById("lgPlaceMap").onclick=function(){ document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place"}; document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"}); alertMsg("釣った場所を地図でタップしてください",15000); };
   var ib=document.getElementById("impBtn"); if(ib) ib.onclick=importRecords;
