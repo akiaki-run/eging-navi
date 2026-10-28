@@ -4,19 +4,19 @@
  * どちらも同じ関数で扱えるようにしている。 */
 var Store=(function(){
   var subs={}, mode="local", uid=null, userName="", fb=null, db=null, unsubs=[], groupUnsubs={};
-  var data={spots:{},catches:{},pos:{},area:null,groups:[],groupSpots:{}};
+  var data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
   function emit(k){ (subs[k]||[]).forEach(function(f){ try{ f(get(k)); }catch(e){ console.error(e); } }); }
   function get(k){
-    if(k==="spots"||k==="catches") return Object.keys(data[k]).map(function(id){return Object.assign({id:id},data[k][id]);});
+    if(k==="spots"||k==="catches"||k==="trips") return Object.keys(data[k]).map(function(id){return Object.assign({id:id},data[k][id]);});
     return data[k];
   }
   function on(k,f){ (subs[k]=subs[k]||[]).push(f); f(get(k)); }
   function lsGet(k,d){ try{ var v=JSON.parse(localStorage.getItem("en."+k)); return v==null?d:v; }catch(e){ return d; } }
   function lsSet(k,v){ try{ localStorage.setItem("en."+k,JSON.stringify(v)); }catch(e){} }
   function loadLocal(){
-    data.spots=lsGet("spots",{}); data.catches=lsGet("catches",{}); data.pos=lsGet("pos",{}); data.area=lsGet("area",null);
+    data.spots=lsGet("spots",{}); data.catches=lsGet("catches",{}); data.trips=lsGet("trips",{}); data.pos=lsGet("pos",{}); data.area=lsGet("area",null);
     data.groups=[]; data.groupSpots={};
-    ["spots","catches","pos","area","groups","groupSpots"].forEach(emit);
+    ["spots","catches","trips","pos","area","groups","groupSpots"].forEach(emit);
   }
   function newId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }
@@ -27,11 +27,11 @@ var Store=(function(){
   function u(){ return db.collection("users").doc(uid); }
   function startCloud(user){
     mode="cloud"; uid=user.uid; userName=user.displayName||"";
-    data={spots:{},catches:{},pos:{},area:null,groups:[],groupSpots:{}};
+    data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
     unsubs.forEach(function(f){f();}); unsubs=[];
-    ["spots","catches","pos","groups","groupSpots"].forEach(emit);
+    ["spots","catches","trips","pos","groups","groupSpots"].forEach(emit);
     function col(name,key){ unsubs.push(u().collection(name).onSnapshot(function(q){ var m={}; q.forEach(function(d){ m[d.id]=d.data(); }); data[key]=m; emit(key); },function(e){ console.warn(e); })); }
-    col("spots","spots"); col("catches","catches"); col("spotpos","pos");
+    col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos");
     unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; emit("area"); emit("groups"); watchGroups(); },function(e){ console.warn(e); }));
     emit("auth");
   }
@@ -90,19 +90,22 @@ var Store=(function(){
     return idb().then(function(d){ return new Promise(function(ok){ var q=d.transaction("p").objectStore("p").get(id); q.onsuccess=function(){ok(q.result||null);}; q.onerror=function(){ok(null);}; }); }).catch(function(){return null;});
   }
   function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return u().collection("catches").doc(id).set(patch,{merge:true}); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
+  function addTrip(rec){ rec=clean(rec); var id=rec.id||newId(); delete rec.id; if(cloudReady()) return u().collection("trips").doc(id).set(rec).then(function(){return id;}); putLocal("trips",id,rec); return Promise.resolve(id); }
+  function deleteTrip(id){ if(cloudReady()) return u().collection("trips").doc(id).delete(); putLocal("trips",id,null); return Promise.resolve(); }
   function deleteCatch(id){ if(cloudReady()) return u().collection("catches").doc(id).delete(); putLocal("catches",id,null); return Promise.resolve(); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
 
   /* --- 端末の記録をアカウントへ移す --- */
-  function localCounts(){ var s=lsGet("spots",{}), c=lsGet("catches",{}); return {spots:Object.keys(s).length,catches:Object.keys(c).length}; }
+  function localCounts(){ var s=lsGet("spots",{}), c=lsGet("catches",{}), t=lsGet("trips",{}); return {spots:Object.keys(s).length,catches:Object.keys(c).length+Object.keys(t).length}; }
   function migrateLocal(){
     if(!cloudReady()) return Promise.reject(new Error("ログインしていません"));
-    var s=lsGet("spots",{}), c=lsGet("catches",{}), p=lsGet("pos",{}), b=db.batch(), n=0;
+    var s=lsGet("spots",{}), c=lsGet("catches",{}), tr=lsGet("trips",{}), p=lsGet("pos",{}), b=db.batch(), n=0;
+    Object.keys(tr).forEach(function(id){ b.set(u().collection("trips").doc(id),tr[id]); n++; });
     Object.keys(s).forEach(function(id){ b.set(u().collection("spots").doc(id),s[id]); n++; });
     Object.keys(c).forEach(function(id){ b.set(u().collection("catches").doc(id),c[id]); n++; });
     Object.keys(p).forEach(function(id){ b.set(u().collection("spotpos").doc(id),p[id]); n++; });
     if(n>450) return Promise.reject(new Error("件数が多すぎます"));
-    return b.commit().then(function(){ ["spots","catches","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return n; });
+    return b.commit().then(function(){ ["spots","catches","trips","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return n; });
   }
 
   /* --- 仲間グループ --- */
@@ -138,7 +141,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();

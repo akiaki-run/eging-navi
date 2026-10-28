@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028r">
+<link rel="stylesheet" href="css/style.css?v=20261028t">
 </head>
 <body>
 <div class="wrap">
@@ -66,7 +66,12 @@
   <div class="src" id="src"></div>
 </section>
 
-<div style="margin:8px 0;text-align:center"><button class="btn pri" type="button" id="nowBtn">🎣 今釣れた!(今いる場所で記録)</button></div>
+<div class="tripbar" id="tripBar">
+  <div id="tripIdle"><button class="btn pri" type="button" id="tripStart">▶ 釣り開始</button> <button class="btn" type="button" id="nowBtn">🎣 今釣れた!</button>
+    <div class="src">釣り場に着いたら「釣り開始」、帰るときに「釣り終了」。その間に釣れたら「釣れた!」。何も釣れなければボウズとして残り、順位づけに使います。</div></div>
+  <div id="tripOn" hidden><div id="tripInfo"></div><button class="btn pri" type="button" id="nowBtn2">🎣 釣れた!</button> <button class="btn" type="button" id="tripEnd">■ 釣り終了</button> <button class="btn sm" type="button" id="tripCancel">取り消す</button></div>
+  <div class="src" id="tripMsg"></div>
+</div>
 <section class="pick" id="pick" aria-live="polite"></section>
 
 <details class="tide fold" id="tideBox">
@@ -84,19 +89,10 @@
   <div class="rank" id="rank"></div>
 </section>
 
-<details class="fold" id="logBox">
-  <summary><h2 id="logSum">釣果の記録</h2></summary>
-  <div id="logList"></div>
-    <div style="margin:8px 0"><button class="btn pri" type="button" id="pastBtn">＋ 過去の釣果を入れる</button> <span class="src">日時・場所・魚を欄に入れるだけ。その日の風・波・水温・潮は自動で付きます。</span></div>
-  <details class="more" id="impBox"><summary>何件もまとめて文章で入れる</summary>
-    <p class="src">1回分を1行で書きます。順番は自由です。日付・時刻(朝・夕方・夜でも可)・場所(港の名前や地名)・魚と数。分かれば投げた向き(南西など)と「港内」か「外海」も。釣れなかった日は「ボウズ」。</p>
-    <p class="src">例:<br>2026/9/12 8:30 高浜港 アオリイカ1杯 南西 外海<br>10/12 7:00-10:00 樋合旧港 コウイカ3 港内<br>10/20 夕方 姫戸港 ボウズ</p>
-    <textarea id="impText" rows="5" style="width:100%" placeholder="ここに書く(何行でも)"></textarea>
-    <div><button class="btn pri sm" id="impBtn" type="button">取り込む</button> <span class="src" id="impMsg"></span></div>
-    <div id="impPrev" class="src"></div>
-    <p class="src">1件ずつ入れるときは、地図でポイントを押して「ここで釣果を記録」から日時を過去に直して保存しても同じです。その日の風・波・水温・潮は自動で付きます。</p>
-  </details>
-</details>
+<section class="logbar" id="logBox">
+  <h2 id="logSum">釣果の記録</h2>
+  <div class="logbtns"><button class="btn" type="button" id="recOpen">記録を見る</button> <button class="btn pri" type="button" id="pastBtn">＋ 過去の釣果を入れる</button></div>
+</section>
 
 <details class="panel" id="grpPanel">
   <summary>仲間とポイントを共有</summary>
@@ -132,6 +128,26 @@
   <details class="outer" id="outerBox"><summary id="outerSum"></summary><div class="spots" id="spotsOut"></div></details>
 </section>
 
+<div id="recView" hidden role="dialog" aria-labelledby="recTitle">
+  <div class="recIn">
+    <div class="recHead"><button class="btn" type="button" id="recClose">← 地図に戻る</button><h2 id="recTitle">釣果の記録</h2></div>
+    <div style="margin:8px 0"><button class="btn pri" type="button" id="pastBtn2">＋ 過去の釣果を入れる</button> <span class="src">日時・場所・魚を欄に入れるだけ。その日の風・波・水温・潮は自動で付きます。</span></div>
+    <div id="recSpots" class="src"></div>
+    <h3 style="margin:14px 0 4px">釣行(釣り開始〜終了)</h3>
+    <div id="tripList"></div>
+    <h3 style="margin:14px 0 4px">釣果</h3>
+    <div id="logList"></div>
+    <details class="more" id="impBox"><summary>何件もまとめて文章で入れる</summary>
+    <p class="src">1回分を1行で書きます。順番は自由です。日付・時刻(朝・夕方・夜でも可)・場所(港の名前や地名)・魚と数。分かれば投げた向き(南西など)と「港内」か「外海」も。釣れなかった日は「ボウズ」。</p>
+    <p class="src">例:<br>2026/9/12 8:30 高浜港 アオリイカ1杯 南西 外海<br>10/12 7:00-10:00 樋合旧港 コウイカ3 港内<br>10/20 夕方 姫戸港 ボウズ</p>
+    <textarea id="impText" rows="5" style="width:100%" placeholder="ここに書く(何行でも)"></textarea>
+    <div><button class="btn pri sm" id="impBtn" type="button">取り込む</button> <span class="src" id="impMsg"></span></div>
+    <div id="impPrev" class="src"></div>
+    <p class="src">1件ずつ入れるときは、地図でポイントを押して「ここで釣果を記録」から日時を過去に直して保存しても同じです。その日の風・波・水温・潮は自動で付きます。</p>
+  </details>
+</details>
+  </div>
+</div>
 <footer>
   釣り方を変えると、順位・時間帯・投げる向き・狙い方がその釣りに合わせて変わります。天草の16か所は釣り情報サイトをもとに説明を書いたポイント、白抜きのピンは海岸線の形(岬・水道・入り江)から自動で拾った候補、緑のピンは仲間が共有したポイントです。自動候補は道や立入禁止を確認できていないので、航空写真と現地で確かめてください。<br>
   順位は、どのポイントにも同じ基準で付けています。使うのは、海岸線から計算した地形(岬・瀬戸・磯・港・入り江・砂浜のどれか、どちらに海が開けているか)、そのポイントの風・波・雨の予報(約5kmのマス目)、近くの観測地点の潮、季節、自分の釣果の記録です。釣り情報サイトから手で入れた説明(釣れる魚・常夜灯など)は表示だけで、点数には入れていません。釣り方ごとの「どの地形が向いているか」「シーズンの月」「風の目安」は一般的なセオリーから決めた目安です。<br>
@@ -170,10 +186,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028r"></script>
-<script src="js/engine.js?v=20261028r"></script>
-<script src="js/wx.js?v=20261028r"></script>
-<script src="js/store.js?v=20261028r"></script>
-<script src="js/app.js?v=20261028r"></script>
+<script src="firebase-config.js?v=20261028t"></script>
+<script src="js/engine.js?v=20261028t"></script>
+<script src="js/wx.js?v=20261028t"></script>
+<script src="js/store.js?v=20261028t"></script>
+<script src="js/app.js?v=20261028t"></script>
 </body>
 </html>
