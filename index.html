@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261028l">
+<link rel="stylesheet" href="css/style.css?v=20261028n">
 </head>
 <body>
 <div class="wrap">
@@ -135,6 +135,7 @@
 </footer>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
+<div class="toast" id="waterAsk" hidden style="bottom:70px">投げた先は? <button class="btn sm pri" type="button" data-water="outer">外海側(港の外・沖)</button> <button class="btn sm pri" type="button" data-water="inner">港内・湾内</button></div>
 <div class="sheet" id="logSheet" hidden role="dialog" aria-labelledby="logTitle">
   <div class="sheetIn">
     <h3 id="logTitle">釣果を記録 <span id="logSpot" class="sub"></span></h3>
@@ -145,6 +146,7 @@
       <div class="wide"><button class="btn sm" id="lgAddItem" type="button">+ 魚を追加</button> <button class="btn sm" id="lgZero" type="button">ボウズで記録</button></div>
       <label>ルアー・仕掛け<input id="lgTackle" maxlength="40" placeholder="例:エギ3.5号 オレンジ金"></label>
       <label>投げた向き<select id="lgDir"><option value="">—</option></select> <button class="btn sm" type="button" id="lgDirMap">地図で指す</button></label>
+      <label>投げた先<select id="lgWater"><option value="">—</option><option value="outer">外海側(港の外・沖)</option><option value="inner">港内・湾内</option></select></label>
       <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
     </div>
@@ -154,10 +156,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261028l"></script>
-<script src="js/engine.js?v=20261028l"></script>
-<script src="js/wx.js?v=20261028l"></script>
-<script src="js/store.js?v=20261028l"></script>
-<script src="js/app.js?v=20261028l"></script>
+<script src="firebase-config.js?v=20261028n"></script>
+<script src="js/engine.js?v=20261028n"></script>
+<script src="js/wx.js?v=20261028n"></script>
+<script src="js/store.js?v=20261028n"></script>
+<script src="js/app.js?v=20261028n"></script>
 </body>
 </html>

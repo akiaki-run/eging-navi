@@ -277,11 +277,12 @@ function castAdvice(open,c,spot){
   if(!open) return null;
   var sea=[]; for(var i=0;i<16;i++) if(open[i]>=0.3) sea.push(i);
   if(!sea.length) return {best:null,text:"地形データからは海の向きを読み取れませんでした。ピンを岸壁や堤防の先に直すと出せます。"};
-  var ws=c.wind_ms||0, wi=dirIndex(c.wind_dir), toward=wi>=0?(wi+8)%16:-1, se=season(c.month), M=methodOf(c), mode=M.cast||"eging";
+  var lg=spot&&spot.log, ws=c.wind_ms||0, wi=dirIndex(c.wind_dir), toward=wi>=0?(wi+8)%16:-1, se=season(c.month), M=methodOf(c), mode=M.cast||"eging";
   function sc(i){ var r=open[i], v=mode==="inner"?(r<1.5?1.6:0.4)+Math.min(r,1.5)/1.5*0.4:(mode==="open"?Math.min(r,5)/5*3:Math.min(r,5)/5*2);
     if(toward>=0&&ws>2) v+=Math.cos(angSteps(i,toward)*Math.PI/8)*Math.min(ws,10)/4;
     if(mode==="eging"&&se==="autumn"&&r<1.5) v+=0.3;
     if(mode==="eging"&&se==="spring"&&r>=1.5) v+=0.5;
+    if(lg&&lg.dirs){ v+=Math.min(1.2,(lg.dirs[i]||0)*0.4)+Math.min(0.4,((lg.dirs[(i+1)%16]||0)+(lg.dirs[(i+15)%16]||0))*0.15); }
     return v; }
   var best=sea[0]; sea.forEach(function(i){ if(sc(i)>sc(best)) best=i; });
   var lo=best, hi=best, lim=sc(best)-0.6;
@@ -304,6 +305,12 @@ function castAdvice(open,c,spot){
   if(M===METHODS.kisu) text+=" 砂地の上を、遠くから手前までゆっくり引いてくる。";
   if(M===METHODS.hata) text+=" 沖の沈み根や岩礁の上を通す。";
   if(mode==="inner"&&open[best]<1.5) text+=" 港内・湾内の際や常夜灯の明暗を狙う。";
+  var isPort=spot&&(spot.kind==="港"||spot.port);
+  if(isPort&&mode!=="foot"&&(ws>=5||(c.wave_m||0)>=1)) text+=" 外が荒れているので、港内に入って投げるのも手。港内は向きにこだわらず、岸壁沿い・船の陰・常夜灯の明暗などを何方向か打ち分ける。";
+  else if(isPort&&mode==="eging") text+=" 港内側なら向きは自由。岸壁沿いや船の陰、常夜灯の明暗を打ち分ける。";
+  if(lg&&lg.dirs){ var ks=Object.keys(lg.dirs).sort(function(a,b){return lg.dirs[b]-lg.dirs[a];});
+    if(ks.length) text+=" 自分の記録では、ここで"+ks.slice(0,3).map(function(k){return DIRS16[k]+"へ"+lg.dirs[k]+"回";}).join("・")+"釣れている。"; }
+  if(lg&&lg.water&&(lg.water.inner||lg.water.outer)) text+="(港内・湾内で"+(lg.water.inner||0)+"回、外海側で"+(lg.water.outer||0)+"回)";
   return {best:best,lo:lo,hi:hi,rel:r,alt:alt,kind:kind(best),text:text};
 }
 
