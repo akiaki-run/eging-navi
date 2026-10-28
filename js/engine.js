@@ -154,7 +154,7 @@ function fishHit(list,m){ return (list||[]).some(function(f){ return m.fish.some
 /* エギング以外の点数 */
 function rankGeneric(c,s,center,radiusKm){
   var m=methodOf(c), k=spotKind(s), why=[], warn=[];
-  var dk=center?distKm(center,s):0, sc=20-(radiusKm?6*dk/radiusKm:0);
+  var dk=center?distKm(center,s):0, sc=20;
   var kb=m.kind[k]; if(kb==null) kb=0; sc+=kb;
   if(m.needSand&&isSandy(s)&&k!=="砂浜"){ sc+=4; why.push("近くに砂地がある"); }
   if(kb>=5) why.push(k+"は"+m.name+"の好ポイント"); else if(kb<=-2) warn.push(k+"は"+m.name+"にはあまり向かない");
@@ -194,7 +194,7 @@ function rankSpots(c,spots,center,radiusKm){
     if((c.method||"eging")!=="eging") return rankGeneric(c,s,center,radiusKm);
     var eg=s.eging||2, sh=(s.shelter==null?1:s.shelter);
     var dk=center?distKm(center,s):0;
-    var sc=eg*10 - (radiusKm?6*dk/radiusKm:0), why=[], warn=[];
+    var sc=eg*10, why=[], warn=[];
     var ws=c.wind_ms, dir=c.wind_dir, north=NORTHISH.indexOf(dir)>=0, west=WESTISH.indexOf(dir)>=0, wdi=DIRS16.indexOf(dir);
     if((s.auto||s.mine)&&s._open&&wdi>=0&&ws!=null){ var fw=s._open[wdi]; sh=fw>=1.5?0:(fw>=0.3?1:2); if(ws>3) why.push(sh===2?"今日の風向きだと風裏になる":(sh===0?"今日の風は海から正面に吹きつける":"")); why=why.filter(Boolean); }
     if(s.auto) why.push("地形から自動で出した候補");
@@ -234,7 +234,8 @@ function rankSpots(c,spots,center,radiusKm){
     if(s.ferry) warn.push("フェリーの時刻を確認");
     return {spot:s,score:sc,dist:dk,why:why,warn:warn};
   });
-  out.sort(function(a,b){return b.score-a.score;});
+  out.forEach(function(r){ r.score=Math.round(r.score*10)/10; });
+  out.sort(function(a,b){ return b.score-a.score||(a.spot.id<b.spot.id?-1:1); });
   return out;
 }
 

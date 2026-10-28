@@ -521,7 +521,7 @@ function render(){
   else { src.className="src manual"; src.textContent=state.wxErr?"天気予報を取得できませんでした("+state.wxErr+")。潮名と日の出入りは計算値です。風は「条件を自分で変える」から入れられます。":"天気予報を読み込んでいます…"; }
   document.getElementById("tideH").textContent="潮と時間帯"+(c.tide_station?"("+c.tide_station+"の潮位・目安)":"");
 
-  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,150); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id);return st?Object.assign({},s,{log:st}):s;});
+  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,300); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id);return st?Object.assign({},s,{log:st}):s;});
   var ranked=rankSpots(c,cand,state.center,radius());
   drawPins(ranked);
   var pick=document.getElementById("pick");
