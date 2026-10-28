@@ -36,7 +36,7 @@ header{display:flex;flex-direction:column;gap:10px}
 button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--buoy);outline-offset:2px}
 
 .mapbox{display:flex;flex-direction:column;gap:10px}
-#map{height:min(62vh,420px);min-height:300px;border-radius:12px;border:1px solid var(--line);overflow:hidden}
+#map{height:min(70vh,560px);min-height:340px;border-radius:12px;border:1px solid var(--line);overflow:hidden}
 .leaflet-container{background:var(--mapSea);font-family:var(--f-body)}
 .leaflet-control-attribution{background:color-mix(in srgb,var(--card) 80%,transparent)!important;color:var(--sub)!important;font-size:10px}
 .leaflet-control-attribution a{color:var(--sub)!important}
@@ -165,3 +165,14 @@ footer a{color:inherit}
 .fishlog{font-size:.82rem;color:var(--sub)}
 .item{padding-top:8px;border-top:1px dashed var(--line)}.item:first-child{border-top:none;padding-top:0}
 .chk{display:flex;align-items:center;gap:6px;font-size:.88rem;white-space:nowrap}
+
+.search{display:flex;gap:8px;flex-wrap:wrap}
+.search input{flex:1;min-width:0;font:inherit;font-size:1rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.qres{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.qitem{font:inherit;text-align:left;padding:10px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.qitem:last-child{border-bottom:none}
+.qitem:hover,.qitem:focus-visible{background:var(--seaSoft)}
+.mapbox.big #map{height:calc(100vh - 140px);height:calc(100dvh - 140px)}
+.leaflet-container .leaflet-tile-pane{filter:none}
+.pin{width:26px;height:26px;font-size:13px}
+.pin.top{width:34px;height:34px;font-size:15px}

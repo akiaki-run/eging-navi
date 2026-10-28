@@ -105,7 +105,7 @@ function initMap(){
   map.on("overlayremove",function(e){ if(e.layer===label) lsSet("eging-photolabel",false); });
   map.on("zoomend",function(){ drawPins(lastRanked); });
   L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
-  circle=L.circle([state.center.lat,state.center.lng],{radius:radius()*1000,color:css("--ring"),weight:2,fillColor:css("--ring"),fillOpacity:0.08,interactive:false}).addTo(map);
+  circle=L.circle([state.center.lat,state.center.lng],{radius:radius()*1000,color:css("--ring"),weight:3,dashArray:"8 6",fill:false,interactive:false}).addTo(map);
   ctrMarker=L.marker([state.center.lat,state.center.lng],{draggable:true,icon:L.divIcon({className:"",html:'<div class="ctr"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:1000,keyboard:false}).addTo(map);
   ctrMarker.bindTooltip("中心(ドラッグで移動)",{direction:"top",offset:[0,-10]});
   ctrMarker.on("drag",function(e){var ll=e.target.getLatLng();state.center={lat:ll.lat,lng:ll.lng};circle.setLatLng(ll);});
@@ -192,9 +192,12 @@ function drawPins(ranked){
   spotLayer.clearLayers();
   var rankOf={}; lastRanked.forEach(function(r,i){rankOf[r.spot.id]=i+1;});
   allSpots().forEach(function(s){
-    var n=rankOf[s.id]; if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
+    var n=rankOf[s.id], z=map.getZoom();
+    if(!n&&z<11) return;
+    if(n>10&&z<12) return;
+    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
     var cls="pin"+(n?(n===1?" top":""):" out")+(s.mine?" mine":"")+(s.auto?" auto":"")+(s.shared?" shared":"");
-    var sz=n?(n===1?30:24):12;
+    var sz=n?(n===1?34:26):12;
     var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="'+cls+'">'+(n||"")+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
     var showName=n&&(n<=3||map.getZoom()>=12);
     var short=s.auto?s.name.replace(/\(.*\)$/,"").replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""):s.name; if(/^の/.test(short)) short=short.slice(1);
@@ -415,6 +418,9 @@ function loadBeaches(){
     .catch(function(e){ if(my!==beachSeq) return; state.beaches=[]; state.beachMsg="砂浜の情報を取得できませんでした("+(e&&e.message||e)+")。キスの実績がある港だけで出しています。"; render(); });
 }
 
+var PREFS=["","北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+function centerPlace(){ var best=null,bd=4,bk=null; Object.keys(towns).forEach(function(k){ (towns[k]||[]).forEach(function(tw){ if(Math.abs(tw[1]-state.center.lat)>0.05||Math.abs(tw[2]-state.center.lng)>0.06)return; var d=distKm(state.center,{lat:tw[1],lng:tw[2]}); if(d<bd){bd=d;best=tw[0];bk=k;} }); });
+  if(best) return {name:(PREFS[+bk]||"")+best}; return nearestPlace(state.center); }
 function areaChanged(fit){
   lsSet("eging-area",{lat:state.center.lat,lng:state.center.lng,dia:state.dia});
   if(fit&&map&&circle) map.fitBounds(circle.getBounds(),{padding:[16,16]});
@@ -423,7 +429,7 @@ function areaChanged(fit){
   state.areaSaveT=setTimeout(saveArea,2000);
 }
 function saveArea(){
-  var pl=nearestPlace(state.center);
+  var pl=centerPlace();
   Store.saveArea({lat:+state.center.lat.toFixed(4),lng:+state.center.lng.toFixed(4),diameter_km:state.dia,place:pl?pl.name:null,updatedAt:new Date().toISOString()}).catch(function(){});
 }
 function savePos(id,ll){
@@ -444,7 +450,7 @@ function fmtTime(d){ if(!d) return ""; var j=new Date(d.getTime()+9*36e5); retur
 function hint(){
   var h=document.getElementById("hint"), n=inside().length;
   if(state.fixId){ var s=allSpots().filter(function(x){return x.id===state.fixId;})[0]; h.textContent="地図で「"+(s?s.name:"")+"」の正しい位置をタップしてください。"; return; }
-  var pl=nearestPlace(state.center);
+  var pl=centerPlace();
   h.textContent=(state.beachMsg?state.beachMsg+" ":"")+(state.autoMsg?state.autoMsg+" ":"")+(pl?"中心:"+pl.name+"付近。":"")+(state.mode==="add"?"地図で追加したい場所をタップ。":"地図をタップするか中心の点をドラッグして範囲を決めます。")+" 円の中:"+n+"か所";
 }
 function showAdd(){ var f=document.getElementById("addForm"); f.hidden=false; document.getElementById("addName").focus(); }
@@ -694,6 +700,42 @@ function renderAuth(){
   Array.prototype.forEach.call(el.querySelectorAll("button"),function(b){ b.onclick=function(){ state.slot=b.dataset.slot;
     Array.prototype.forEach.call(el.querySelectorAll("button"),function(x){ x.setAttribute("aria-pressed",x===b); }); render(); }; });
 })();
+
+
+/* ===== 地名で探す ===== */
+var searchSeq=0;
+function doSearch(){
+  var q=document.getElementById("q").value.trim(), box=document.getElementById("qres"), my=++searchSeq;
+  if(!q){ box.hidden=true; return; }
+  var local=PLACES.filter(function(p){ return p[0].indexOf(q)>=0; }).slice(0,6).map(function(p){ return {name:p[0],lat:p[1],lng:p[2],zoom:11}; });
+  function show(list,msg){
+    if(my!==searchSeq) return;
+    box.hidden=false;
+    box.innerHTML=list.length?list.map(function(r,i){ return '<button class="qitem" data-i="'+i+'">'+esc(r.name)+'</button>'; }).join(""):'<div class="src">'+esc(msg||"見つかりませんでした。市町村名や港の名前で試してください。")+'</div>';
+    Array.prototype.forEach.call(box.querySelectorAll(".qitem"),function(b){ b.onclick=function(){ var r=list[+b.dataset.i]; goTo(r); box.hidden=true; }; });
+  }
+  show(local,"探しています…");
+  fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(q))
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var seen={}, out=local.slice();
+      local.forEach(function(x){ seen[x.name]=1; });
+      (j||[]).slice(0,10).forEach(function(f){ var nm=f.properties&&f.properties.title; if(!nm||seen[nm]) return; seen[nm]=1;
+        out.push({name:nm,lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0],zoom:13}); });
+      show(out.slice(0,10));
+    }).catch(function(){ show(local); });
+}
+function goTo(r){
+  state.center={lat:r.lat,lng:r.lng};
+  if(ctrMarker){ ctrMarker.setLatLng([r.lat,r.lng]); circle.setLatLng([r.lat,r.lng]); }
+  areaChanged(true);
+}
+document.getElementById("qform").onsubmit=function(e){ e.preventDefault(); doSearch(); };
+document.getElementById("bigMap").onclick=function(){
+  var mb=document.querySelector(".mapbox"), on=!mb.classList.contains("big");
+  mb.classList.toggle("big",on); this.textContent=on?"地図を小さく":"地図を大きく";
+  setTimeout(function(){ if(map){ map.invalidateSize(); map.fitBounds(circle.getBounds(),{padding:[16,16]}); } },60);
+};
 
 /* ===== 起動 ===== */
 var OVERVIEW=[], PLACES=[];
