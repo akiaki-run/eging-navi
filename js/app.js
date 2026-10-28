@@ -93,8 +93,15 @@ function initMap(){
   var std=L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{maxZoom:18,maxNativeZoom:18,attribution:gsi});
   var pale=L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",{maxZoom:18,maxNativeZoom:18,attribution:gsi});
   var photo=L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",{maxZoom:18,maxNativeZoom:18,attribution:gsi});
-  pale.addTo(map);
-  L.control.layers({"淡い地図":pale,"標準地図":std,"航空写真(浅瀬・藻場が見える)":photo},null,{position:"topright"}).addTo(map);
+  var label=L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",{maxZoom:18,maxNativeZoom:18,opacity:0.55,attribution:gsi});
+  var base=lsGet("eging-base")||"std";
+  ({std:std,pale:pale,photo:photo}[base]||std).addTo(map);
+  if(base==="photo"&&lsGet("eging-photolabel")!==false) label.addTo(map);
+  L.control.layers({"標準地図(地名あり)":std,"淡い地図":pale,"航空写真(浅瀬・藻場が見える)":photo},{"航空写真に地名を重ねる":label},{position:"topright"}).addTo(map);
+  map.on("baselayerchange",function(e){ var k=e.layer===photo?"photo":(e.layer===pale?"pale":"std"); lsSet("eging-base",k); if(k==="photo"&&!map.hasLayer(label)&&lsGet("eging-photolabel")!==false) label.addTo(map); if(k!=="photo"&&map.hasLayer(label)) map.removeLayer(label); });
+  map.on("overlayadd",function(e){ if(e.layer===label) lsSet("eging-photolabel",true); });
+  map.on("overlayremove",function(e){ if(e.layer===label) lsSet("eging-photolabel",false); });
+  map.on("zoomend",function(){ drawPins(lastRanked); });
   L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
   circle=L.circle([state.center.lat,state.center.lng],{radius:radius()*1000,color:css("--ring"),weight:2,fillColor:css("--ring"),fillOpacity:0.08,interactive:false}).addTo(map);
   ctrMarker=L.marker([state.center.lat,state.center.lng],{draggable:true,icon:L.divIcon({className:"",html:'<div class="ctr"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:1000,keyboard:false}).addTo(map);
@@ -176,16 +183,20 @@ function castBlock(s,c){
 }
 function nearestPlace(ll){var b=null,bd=1e9;PLACES.forEach(function(p){var d=distKm(ll,{lat:p[1],lng:p[2]});if(d<bd){bd=d;b=p;}});return b?{name:b[0],lat:b[1],lng:b[2],dist:bd}:null;}
 
+var lastRanked=[];
 function drawPins(ranked){
+  lastRanked=ranked||[];
   if(!spotLayer)return;
   spotLayer.clearLayers();
-  var rankOf={}; ranked.forEach(function(r,i){rankOf[r.spot.id]=i+1;});
+  var rankOf={}; lastRanked.forEach(function(r,i){rankOf[r.spot.id]=i+1;});
   allSpots().forEach(function(s){
     var n=rankOf[s.id]; if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
     var cls="pin"+(n?(n===1?" top":""):" out")+(s.mine?" mine":"")+(s.auto?" auto":"")+(s.shared?" shared":"");
     var sz=n?(n===1?30:24):12;
     var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="'+cls+'">'+(n||"")+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
-    m.bindTooltip(esc(s.name),{direction:"top",offset:[0,-sz/2]});
+    var showName=n&&(n<=3||map.getZoom()>=12);
+    var short=s.auto?s.name.replace(/\(.*\)$/,"").replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""):s.name; if(/^の/.test(short)) short=short.slice(1);
+    m.bindTooltip(esc(showName?short:s.name),showName?{permanent:true,direction:"right",offset:[sz/2,0],className:"pinlabel"}:{direction:"top",offset:[0,-sz/2]});
     m.on("click",function(){var t=document.getElementById("sp-"+s.id);if(t){ if(t.closest("details"))t.closest("details").open=true; t.scrollIntoView({behavior:"smooth",block:"center"});}});
     spotLayer.addLayer(m);
   });
