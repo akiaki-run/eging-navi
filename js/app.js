@@ -1193,7 +1193,7 @@ function renderAuth(){
   if(!Store.configured){ el.innerHTML='<span class="src">この端末に保存中</span>'; return; }
   if(Store.mode==="cloud"){
     var lc=Store.localCounts(), mig=(lc.spots+lc.catches)>0;
-    el.innerHTML='<span class="src">'+esc(Store.userName||"ログイン中")+'</span>'+(mig?'<button class="btn sm pri" id="migBtn">この端末の記録('+(lc.spots+lc.catches)+'件)をアカウントへ移す</button>':'')+'<button class="btn sm" id="outBtn">ログアウト</button>';
+    el.innerHTML='<span class="src">'+esc(Store.userName||"ログイン中")+' <small title="スマホとPCでこの番号が同じなら、同じアカウントです">ID '+esc(Store.uidShort)+'</small></span>'+(mig?'<button class="btn sm pri" id="migBtn">この端末の記録('+(lc.spots+lc.catches)+'件)をアカウントへ移す</button>':'')+'<button class="btn sm" id="outBtn">ログアウト</button>';
     document.getElementById("outBtn").onclick=function(){ Store.signOut(); };
     if(mig) document.getElementById("migBtn").onclick=function(){ Store.migrateLocal().then(function(n){ alertMsg(n+"件をアカウントに移しました(アカウントにすでにある同じ記録はとばしました)。"); renderAuth(); }).catch(function(e){ alertMsg("移せませんでした:"+(e&&e.message||e)); }); };
   } else {
@@ -1276,6 +1276,7 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("tripCancel").onclick=function(){ var b=this; if(b.dataset.armed){ setActiveTrip(null); b.dataset.armed=""; b.textContent="取り消す"; document.getElementById("tripMsg").textContent="釣り開始を取り消しました(記録は残りません)。"; } else { b.dataset.armed="1"; b.textContent="もう一度押すと取り消し"; } };
   renderTripBar(); setInterval(renderTripBar,60000);
   Store.on("activeTrip",onCloudTrip);
+  Store.on("syncError",function(m){ var el=document.getElementById("syncErr"); if(!el) return; el.hidden=!m; el.textContent=m||""; });
   Store.on("trips",function(list){ state.trips=list; renderTrips(); render(); });
   document.getElementById("lgHere").onclick=useHere;
   document.getElementById("lgCam").onchange=function(){ onPhoto(this.files[0],true); };

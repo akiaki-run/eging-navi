@@ -7,6 +7,7 @@ var Store=(function(){
   var data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{},activeTrip:undefined};
   function emit(k){ (subs[k]||[]).forEach(function(f){ try{ f(get(k)); }catch(e){ console.error(e); } }); }
   function get(k){
+    if(k==="syncError") return lastErr;
     if(k==="spots"||k==="catches"||k==="trips") return Object.keys(data[k]).map(function(id){return Object.assign({id:id},data[k][id]);});
     return data[k];
   }
@@ -21,7 +22,15 @@ var Store=(function(){
   function newId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }
   /* クラウドへの書き込み:電波が無いと完了の返事が来ないので、少し待って返事が無ければ「端末にためた」として先へ進む */
-  function fw(p,val){ var done=false; p.then(function(){done=true;},function(e){ console.warn("書き込みに失敗",e); });
+  /* アカウントへの保存・読み込みの失敗を画面に知らせる(電波が無いだけのときは知らせない) */
+  var lastErr=null;
+  function syncErr(e){ var c=(e&&e.code)||"", m=String(e&&e.message||e);
+    if(c==="unavailable"||/offline/i.test(m)) return;
+    var txt=c==="permission-denied"?"アカウントに保存できません(権限がありません)。Firebase の Firestore の「ルール」が貼られていないか、内容が違います。":
+      (c==="not-found"||c==="failed-precondition"||/does not exist|NOT_FOUND/i.test(m))?"アカウントに保存できません。Firebase で「Firestore Database」がまだ作られていません。":
+      "アカウントへの保存でエラーが出ました:"+(c||m);
+    lastErr=txt; console.warn(txt,e); emit("syncError"); }
+  function fw(p,val){ var done=false; p.then(function(){done=true;},function(e){ syncErr(e); });
     return Promise.race([p.then(function(){return val;}),new Promise(function(ok){ setTimeout(function(){ if(!done) ok(val); },2500); })]); }
 
   /* --- Firebase --- */
@@ -33,9 +42,9 @@ var Store=(function(){
     data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
     unsubs.forEach(function(f){f();}); unsubs=[];
     ["spots","catches","trips","pos","groups","groupSpots"].forEach(emit);
-    function col(name,key){ unsubs.push(u().collection(name).onSnapshot(function(q){ var m={}; q.forEach(function(d){ m[d.id]=d.data(); }); data[key]=m; emit(key); },function(e){ console.warn(e); })); }
+    function col(name,key){ unsubs.push(u().collection(name).onSnapshot(function(q){ var m={}; q.forEach(function(d){ m[d.id]=d.data(); }); data[key]=m; emit(key); },function(e){ syncErr(e); })); }
     col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos");
-    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ console.warn(e); }));
+    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ syncErr(e); }));
     emit("auth");
   }
   function stopCloud(){
@@ -163,5 +172,5 @@ var Store=(function(){
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
     saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
-    get mode(){return mode;}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
+    get mode(){return mode;}, get uidShort(){return uid?uid.slice(0,6):"";}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();
