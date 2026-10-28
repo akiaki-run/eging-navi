@@ -1,6 +1,6 @@
 {
-  "name": "全国エギングナビ",
-  "short_name": "エギングナビ",
+  "name": "全国釣りナビ",
+  "short_name": "釣りナビ",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#EEF2F3",

@@ -152,3 +152,16 @@ footer a{color:inherit}
 
 .leaflet-tooltip.pinlabel{background:color-mix(in srgb,var(--card) 88%,transparent);border:none;box-shadow:0 1px 2px rgb(0 0 0 / .25);padding:1px 6px;font-size:11px;font-weight:700;color:var(--ink)}
 .leaflet-tooltip.pinlabel::before{display:none}
+
+.methodbox{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.mlabel{font-weight:700;font-size:.9rem}
+#method{font:inherit;font-size:1rem;font-weight:700;padding:6px 10px;border:1px solid var(--buoy);border-radius:8px;background:var(--paper);color:var(--ink)}
+.form .wide{grid-column:1/-1}
+.items{display:flex;flex-direction:column;gap:8px}
+.item{display:grid;grid-template-columns:1.6fr .7fr .9fr auto;gap:6px;align-items:end}
+.item label{font-size:.72rem}
+.item .x{align-self:end}
+@media (max-width:420px){.item{grid-template-columns:1fr 1fr}.item .x{grid-column:2}}
+.fishlog{font-size:.82rem;color:var(--sub)}
+.item{padding-top:8px;border-top:1px dashed var(--line)}.item:first-child{border-top:none;padding-top:0}
+.chk{display:flex;align-items:center;gap:6px;font-size:.88rem;white-space:nowrap}

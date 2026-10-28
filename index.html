@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>全国エギングナビ</title>
-<meta name="description" content="地図で範囲を決めると、天気・風・潮と地形から今日のエギングの一押しポイント、時間帯、投げる向きを出します。">
+<title>全国釣りナビ</title>
+<meta name="description" content="釣り方を選んで地図で範囲を決めると、天気・風・潮と地形から今日の一押しポイント、時間帯、投げる向きを出します。">
 <meta name="theme-color" content="#13293D">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -18,7 +18,7 @@
 <div class="wrap">
 <header>
   <div class="top">
-    <h1>全国エギングナビ</h1>
+    <h1>全国釣りナビ</h1>
     <div class="auth" id="auth"></div>
     <div class="seg" role="group" aria-label="日付">
       <button id="d0" aria-pressed="true">今日</button>
@@ -26,6 +26,12 @@
     </div>
   </div>
 </header>
+
+<section class="methodbox">
+  <label class="mlabel" for="method">釣り方</label>
+  <select id="method"></select>
+  <span class="src" id="methodNote"></span>
+</section>
 
 <section class="mapbox">
   <div id="map" role="application" aria-label="範囲を決める地図"></div>
@@ -110,7 +116,7 @@
 </section>
 
 <footer>
-  天草の16か所は釣り情報サイトをもとに説明を書いたポイント、白抜きのピンは海岸線の形(岬・水道・入り江)から自動で拾った候補、緑のピンは仲間が共有したポイントです。自動候補は道や立入禁止を確認できていないので、航空写真と現地で確かめてください。<br>
+  釣り方を変えると、順位・時間帯・投げる向き・狙い方がその釣りに合わせて変わります。天草の16か所は釣り情報サイトをもとに説明を書いたポイント、白抜きのピンは海岸線の形(岬・水道・入り江)から自動で拾った候補、緑のピンは仲間が共有したポイントです。自動候補は道や立入禁止を確認できていないので、航空写真と現地で確かめてください。<br>
   順位は一般的なエギングのセオリー(風を避けられるか、潮の動き、季節、マヅメ、円の中心からの距離)と、自分の釣果の記録で付けた目安です。投げる向きは、海岸線から「海が開いている向き」を測り、風向きと合わせて出しています。<br>
   ログインしていないときは、記録はこの端末の中だけに保存されます。ログインすると、記録・自分のポイント・範囲はあなたのアカウントに保存され、ほかの人には見えません。<br>
   天気・風・波:<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>(CC BY 4.0)。潮:<a href="https://www.data.jma.go.jp/gmd/kaiyou/db/tide/suisan/" target="_blank" rel="noopener">気象庁 潮位表</a>の推算値を加工。地図:<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>。海岸線:国土数値情報(行政区域データ)を加工。地名:Geolonia 住所データ。ポイント情報(天草)の出典:上天草釣りガイド、釣り広場.com、うおそく、釣り天国、Activel、釣り場ネット。
@@ -122,16 +128,15 @@
     <h3 id="logTitle">釣果を記録 <span id="logSpot" class="sub"></span></h3>
     <div class="form">
       <label>日時<input type="datetime-local" id="lgAt"></label>
-      <label>釣れた数(杯)<input type="number" id="lgN" min="0" max="99" value="1" inputmode="numeric"></label>
-      <label>イカの種類<select id="lgKind"><option>アオリイカ</option><option>コウイカ</option><option>ヤリイカ</option><option>ケンサキイカ</option><option>その他</option></select></label>
-      <label>いちばん大きいもの(g)<input type="number" id="lgG" min="0" step="10" inputmode="numeric" placeholder="例:450"></label>
-      <label>エギの号数<select id="lgSize"><option>2.5</option><option>3</option><option selected>3.5</option><option>4</option></select></label>
-      <label>エギの色<input id="lgColor" maxlength="20" placeholder="例:オレンジ金"></label>
+      <label>釣り方<select id="lgMethod"></select></label>
+      <div class="wide items" id="lgItems"></div>
+      <div class="wide"><button class="btn sm" id="lgAddItem" type="button">+ 魚を追加</button> <button class="btn sm" id="lgZero" type="button">ボウズで記録</button></div>
+      <label>ルアー・仕掛け<input id="lgTackle" maxlength="40" placeholder="例:エギ3.5号 オレンジ金"></label>
       <label>投げた向き<select id="lgDir"><option value="">—</option></select></label>
-      <label>メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで抱いた"></label>
+      <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
     </div>
-    <p class="src">天気・風・潮名・上げ下げ・マヅメかどうかは自動で一緒に残します。釣れなかった日は0杯で記録してください。</p>
+    <p class="src">天気・風・潮名・上げ下げ・マヅメかどうかは自動で一緒に残します。エギングの途中でほかの魚が釣れたら「+ 魚を追加」で同じ記録に並べられます。釣れなかった日は「ボウズで記録」を押してください。</p>
   </div>
 </div>
 
