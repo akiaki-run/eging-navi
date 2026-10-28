@@ -8,6 +8,7 @@ var Store=(function(){
   function emit(k){ (subs[k]||[]).forEach(function(f){ try{ f(get(k)); }catch(e){ console.error(e); } }); }
   function get(k){
     if(k==="syncError") return lastErr;
+    if(k==="sync") return sync;
     if(k==="spots"||k==="catches"||k==="trips") return Object.keys(data[k]).map(function(id){return Object.assign({id:id},data[k][id]);});
     return data[k];
   }
@@ -23,7 +24,7 @@ var Store=(function(){
   function clean(o){ return JSON.parse(JSON.stringify(o)); }
   /* クラウドへの書き込み:電波が無いと完了の返事が来ないので、少し待って返事が無ければ「端末にためた」として先へ進む */
   /* アカウントへの保存・読み込みの失敗を画面に知らせる(電波が無いだけのときは知らせない) */
-  var lastErr=null;
+  var lastErr=null, sync={};
   function syncErr(e){ var c=(e&&e.code)||"", m=String(e&&e.message||e);
     if(c==="unavailable"||/offline/i.test(m)) return;
     var txt=c==="permission-denied"?"アカウントに保存できません(権限がありません)。Firebase の Firestore の「ルール」が貼られていないか、内容が違います。":
@@ -42,7 +43,9 @@ var Store=(function(){
     data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
     unsubs.forEach(function(f){f();}); unsubs=[];
     ["spots","catches","trips","pos","groups","groupSpots"].forEach(emit);
-    function col(name,key){ unsubs.push(u().collection(name).onSnapshot(function(q){ var m={}; q.forEach(function(d){ m[d.id]=d.data(); }); data[key]=m; emit(key); },function(e){ syncErr(e); })); }
+    function col(name,key){ unsubs.push(u().collection(name).onSnapshot({includeMetadataChanges:true},function(q){ var m={}, pend=0; q.forEach(function(d){ m[d.id]=d.data(); if(d.metadata.hasPendingWrites) pend++; });
+      sync[key]={cache:q.metadata.fromCache,pending:pend,n:q.size,at:new Date()}; emit("sync");
+      var ch=JSON.stringify(Object.keys(m))!==JSON.stringify(Object.keys(data[key]||{}))||q.docChanges().length; data[key]=m; if(ch) emit(key); },function(e){ syncErr(e); })); }
     col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos");
     unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ syncErr(e); }));
     emit("auth");

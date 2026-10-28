@@ -1188,12 +1188,13 @@ document.getElementById("grpJoin").onclick=function(){
 };
 
 /* ===== ログイン ===== */
-function renderAuth(){
+function renderAuth(){ renderAuth0(); if(window.showSync) window.showSync(Store.get("sync")); }
+function renderAuth0(){
   var el=document.getElementById("auth");
   if(!Store.configured){ el.innerHTML='<span class="src">この端末に保存中</span>'; return; }
   if(Store.mode==="cloud"){
     var lc=Store.localCounts(), mig=(lc.spots+lc.catches)>0;
-    el.innerHTML='<span class="src">'+esc(Store.userName||"ログイン中")+' <small title="スマホとPCでこの番号が同じなら、同じアカウントです">ID '+esc(Store.uidShort)+'</small></span>'+(mig?'<button class="btn sm pri" id="migBtn">この端末の記録('+(lc.spots+lc.catches)+'件)をアカウントへ移す</button>':'')+'<button class="btn sm" id="outBtn">ログアウト</button>';
+    el.innerHTML='<span class="src">'+esc(Store.userName||"ログイン中")+' <small title="スマホとPCでこの番号が同じなら、同じアカウントです">ID '+esc(Store.uidShort)+'</small> <small id="syncState"></small></span>'+(mig?'<button class="btn sm pri" id="migBtn">この端末の記録('+(lc.spots+lc.catches)+'件)をアカウントへ移す</button>':'')+'<button class="btn sm" id="outBtn">ログアウト</button>';
     document.getElementById("outBtn").onclick=function(){ Store.signOut(); };
     if(mig) document.getElementById("migBtn").onclick=function(){ Store.migrateLocal().then(function(n){ alertMsg(n+"件をアカウントに移しました(アカウントにすでにある同じ記録はとばしました)。"); renderAuth(); }).catch(function(e){ alertMsg("移せませんでした:"+(e&&e.message||e)); }); };
   } else {
@@ -1276,6 +1277,10 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("tripCancel").onclick=function(){ var b=this; if(b.dataset.armed){ setActiveTrip(null); b.dataset.armed=""; b.textContent="取り消す"; document.getElementById("tripMsg").textContent="釣り開始を取り消しました(記録は残りません)。"; } else { b.dataset.armed="1"; b.textContent="もう一度押すと取り消し"; } };
   renderTripBar(); setInterval(renderTripBar,60000);
   Store.on("activeTrip",onCloudTrip);
+  Store.on("sync",window.showSync=function(sy){ var el=document.getElementById("syncState"); if(!el) return; if(Store.mode!=="cloud"){ el.textContent=""; return; }
+    var ks=["catches","trips"].filter(function(k){return sy[k];}); if(!ks.length){ el.textContent="アカウントを読み込み中…"; return; }
+    var pend=ks.reduce(function(a,k){return a+sy[k].pending;},0), cache=ks.some(function(k){return sy[k].cache;}), n=ks.reduce(function(a,k){return a+sy[k].n;},0);
+    el.textContent=pend?"未送信 "+pend+"件(電波が戻ると送ります)":(cache?"サーバーにつながっていません(端末に保存した分を表示中)":"アカウントと同期済み(釣果・釣行 "+n+"件)"); });
   Store.on("syncError",function(m){ var el=document.getElementById("syncErr"); if(!el) return; el.hidden=!m; el.textContent=m||""; });
   Store.on("trips",function(list){ state.trips=list; renderTrips(); render(); });
   document.getElementById("lgHere").onclick=useHere;
