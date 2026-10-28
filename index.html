@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>全国エギングナビ</title>
+<meta name="description" content="地図で範囲を決めると、天気・風・潮と地形から今日のエギングの一押しポイント、時間帯、投げる向きを出します。">
+<meta name="theme-color" content="#13293D">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="top">
+    <h1>全国エギングナビ</h1>
+    <div class="auth" id="auth"></div>
+    <div class="seg" role="group" aria-label="日付">
+      <button id="d0" aria-pressed="true">今日</button>
+      <button id="d1" aria-pressed="false">明日</button>
+    </div>
+  </div>
+</header>
+
+<section class="mapbox">
+  <div id="map" role="application" aria-label="範囲を決める地図"></div>
+  <div class="ctrls">
+    <label for="dia">範囲の直径
+      <input type="range" id="dia" min="2" max="100" step="1" value="20"></label>
+    <span class="dia"><span id="diaV">20</span> km</span>
+    <div class="seg" role="group" aria-label="地図をタップしたとき" style="grid-column:1/-1">
+      <button id="mCenter" aria-pressed="true">タップで中心を動かす</button>
+      <button id="mAdd" aria-pressed="false">タップでポイントを追加</button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div class="addform" id="addForm" hidden>
+    <input id="addName" placeholder="ポイント名(例:〇〇港の赤灯)" maxlength="40">
+    <input id="addNote" placeholder="メモ(任意)" maxlength="120">
+    <button class="btn pri" id="addSave">追加する</button>
+    <button class="btn" id="addCancel">やめる</button>
+  </div>
+</section>
+
+<section>
+  <div class="seg slots" id="slots" role="group" aria-label="釣りに行く時間帯"></div>
+  <div class="strip" id="strip"></div>
+  <div class="src" id="src"></div>
+</section>
+
+<section class="pick" id="pick" aria-live="polite"></section>
+
+<section class="tide">
+  <h2 id="tideH">潮と時間帯</h2>
+  <div id="tideSvg"></div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--sea)"></i>潮位</span>
+    <span><i class="sw" style="background:var(--dusk)"></i>マヅメ</span>
+    <span><i class="sw" style="background:var(--buoy)"></i>狙い目</span>
+  </div>
+</section>
+
+<section>
+  <h2>円の中の順位</h2>
+  <div class="rank" id="rank"></div>
+</section>
+
+<section>
+  <h2>釣果の記録</h2>
+  <div id="logList"></div>
+</section>
+
+<details class="panel" id="grpPanel">
+  <summary>仲間とポイントを共有</summary>
+  <p class="src">釣果の記録・自分のポイント・地図の範囲は、あなたにしか見えません。共有していい仲間とは「グループ」を作り、ポイントごとに「〇〇に共有」を押すと、そのグループに参加した人の地図にだけ出ます。仲間もGoogleでログインして、コードで参加します。</p>
+  <div id="grpList"></div>
+  <div class="form" id="grpForm">
+    <label>新しいグループの名前<input id="grpName" maxlength="20" placeholder="例:天草エギング部"></label>
+    <div class="act" style="align-items:end"><button class="btn pri" id="grpCreate">グループを作る</button></div>
+    <label>仲間からもらったコード<input id="grpCode" maxlength="10" placeholder="英数字10文字" autocapitalize="off"></label>
+    <label>このグループの呼び名<input id="grpJoinName" maxlength="20" placeholder="例:先輩たち"></label>
+    <div class="act"><button class="btn" id="grpJoin">コードで参加</button><span class="warn" id="grpMsg"></span></div>
+  </div>
+</details>
+
+<details class="panel" id="manualPanel">
+  <summary>条件を自分で変える</summary>
+  <div class="form">
+    <label>風向き(吹いてくる方向)
+      <select id="mDir"></select></label>
+    <label>風速 <span class="num" id="mWsV"></span>
+      <input type="range" id="mWs" min="0" max="15" step="1"></label>
+    <label>潮名
+      <select id="mTide"><option>大潮</option><option>中潮</option><option>小潮</option><option>長潮</option><option>若潮</option></select></label>
+    <label>波の高さ
+      <select id="mWave"><option value="">不明</option><option value="0.3">0.5m未満</option><option value="1">1m前後</option><option value="2">2m以上</option></select></label>
+    <div class="act"><button class="btn" id="mApply">この条件で並べ替え</button><button class="btn" id="mReset">自動の条件に戻す</button></div>
+  </div>
+</details>
+
+<section>
+  <h2>ポイント図鑑</h2>
+  <div class="spots" id="spotsIn"></div>
+  <details class="outer" id="outerBox"><summary id="outerSum"></summary><div class="spots" id="spotsOut"></div></details>
+</section>
+
+<footer>
+  天草の16か所は釣り情報サイトをもとに説明を書いたポイント、白抜きのピンは海岸線の形(岬・水道・入り江)から自動で拾った候補、緑のピンは仲間が共有したポイントです。自動候補は道や立入禁止を確認できていないので、航空写真と現地で確かめてください。<br>
+  順位は一般的なエギングのセオリー(風を避けられるか、潮の動き、季節、マヅメ、円の中心からの距離)と、自分の釣果の記録で付けた目安です。投げる向きは、海岸線から「海が開いている向き」を測り、風向きと合わせて出しています。<br>
+  ログインしていないときは、記録はこの端末の中だけに保存されます。ログインすると、記録・自分のポイント・範囲はあなたのアカウントに保存され、ほかの人には見えません。<br>
+  天気・風・波:<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>(CC BY 4.0)。潮:<a href="https://www.data.jma.go.jp/gmd/kaiyou/db/tide/suisan/" target="_blank" rel="noopener">気象庁 潮位表</a>の推算値を加工。地図:<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>。海岸線:国土数値情報(行政区域データ)を加工。地名:Geolonia 住所データ。ポイント情報(天草)の出典:上天草釣りガイド、釣り広場.com、うおそく、釣り天国、Activel、釣り場ネット。
+</footer>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+<div class="sheet" id="logSheet" hidden role="dialog" aria-labelledby="logTitle">
+  <div class="sheetIn">
+    <h3 id="logTitle">釣果を記録 <span id="logSpot" class="sub"></span></h3>
+    <div class="form">
+      <label>日時<input type="datetime-local" id="lgAt"></label>
+      <label>釣れた数(杯)<input type="number" id="lgN" min="0" max="99" value="1" inputmode="numeric"></label>
+      <label>イカの種類<select id="lgKind"><option>アオリイカ</option><option>コウイカ</option><option>ヤリイカ</option><option>ケンサキイカ</option><option>その他</option></select></label>
+      <label>いちばん大きいもの(g)<input type="number" id="lgG" min="0" step="10" inputmode="numeric" placeholder="例:450"></label>
+      <label>エギの号数<select id="lgSize"><option>2.5</option><option>3</option><option selected>3.5</option><option>4</option></select></label>
+      <label>エギの色<input id="lgColor" maxlength="20" placeholder="例:オレンジ金"></label>
+      <label>投げた向き<select id="lgDir"><option value="">—</option></select></label>
+      <label>メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで抱いた"></label>
+      <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
+    </div>
+    <p class="src">天気・風・潮名・上げ下げ・マヅメかどうかは自動で一緒に残します。釣れなかった日は0杯で記録してください。</p>
+  </div>
+</div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="firebase-config.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/wx.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

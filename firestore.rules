@@ -1,0 +1,42 @@
+rules_version = '2';
+// 全国エギングナビ:データの鍵(Firebase の Firestore → ルール に貼り付ける)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMember(code) {
+      return signedIn() && exists(/databases/$(database)/documents/groups/$(code)/members/$(request.auth.uid));
+    }
+
+    // 自分の記録・ポイント・範囲:本人だけが読み書きできる
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // 仲間グループ:コードを知っている人だけが参加でき、参加者だけが中を見られる
+    match /groups/{code} {
+      allow get: if signedIn();                       // コードで存在を確かめる
+      allow list: if false;                           // 一覧は誰にも見せない
+      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid
+                    && code.matches('^[a-z0-9]{10}$');
+
+      match /members/{mid} {
+        allow read: if isMember(code);
+        allow create: if signedIn() && mid == request.auth.uid
+                      && exists(/databases/$(database)/documents/groups/$(code));
+        allow delete: if signedIn() && mid == request.auth.uid;
+      }
+
+      match /spots/{sid} {
+        allow read: if isMember(code);
+        allow create, update: if isMember(code)
+                              && request.resource.data.by == request.auth.uid
+                              && sid.matches(request.auth.uid + '_.*');
+        allow delete: if isMember(code) && resource.data.by == request.auth.uid;
+      }
+    }
+  }
+}
