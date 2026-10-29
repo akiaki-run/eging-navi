@@ -137,6 +137,7 @@ var Store=(function(){
   function updateCatch(id,patch){ patch=clean(patch); if(cloudReady()) return cw("catches",id,patch,{merge:true}); var o=Object.assign({},data.catches[id]||{},patch); putLocal("catches",id,o); return Promise.resolve(); }
   function addTrip(rec){ rec=clean(rec); var id=rec.id||newId(); delete rec.id; if(cloudReady()) return cw("trips",id,rec,{val:id}); putLocal("trips",id,rec); return Promise.resolve(id); }
   function deleteTrip(id){ if(cloudReady()) return cw("trips",id,null,{del:true}); putLocal("trips",id,null); return Promise.resolve(); }
+  function setCatch(id,rec){ rec=clean(rec); if(cloudReady()) return cw("catches",id,rec,{val:id}); putLocal("catches",id,rec); return Promise.resolve(id); }
   function deleteCatch(id){ if(cloudReady()) return cw("catches",id,null,{del:true}); putLocal("catches",id,null); return Promise.resolve(); }
   function saveActiveTrip(t){ if(cloudReady()) return fw(u().set({activeTrip:t||null},{merge:true})); return Promise.resolve(); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
@@ -197,7 +198,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,setCatch:setCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uidShort(){return uid?uid.slice(0,6):"";}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();

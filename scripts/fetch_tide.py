@@ -90,7 +90,8 @@ def ports():
 def main():
     ports()
     today = dt.date.today()
-    years = [today.year, today.year + 1] if today.month >= 11 else [today.year]
+    # 去年の分も入れておく(過去の釣果に潮を付けるため)。11月からは来年の分も
+    years = [today.year - 1, today.year] + ([today.year + 1] if today.month >= 11 else [])
     st = stations(today.year)
     os.makedirs(ROOT, exist_ok=True)
     with open(os.path.join(ROOT, "stations.json"), "w", encoding="utf-8") as f:

@@ -55,7 +55,7 @@ function kindAt(x){ if(x.spot_kind) return x.spot_kind; var sp=allSpots().filter
 /* ===== 記録からの学習:条件ごとの「釣れた割合」を全体と比べて点数を自動で直す ===== */
 var learnMemo={k:"",v:null};
 function computeLearn(){
-  var mk=state.method+"|"+(state.target||"")+"|"+state.catches.length+"|"+(state.trips||[]).length; if(learnMemo.k===mk) return learnMemo.v;
+  var mk=state.method+"|"+(state.target||"")+"|"+state.catches.length+"|"+(state.trips||[]).length+"|"+state.catches.reduce(function(a,x){ return a+(x.cond?1:0)+(x.cast_dir?2:0)+(x.water?4:0)+recItems(x).length*8; },0); if(learnMemo.k===mk) return learnMemo.v;
   var m=METHODS[state.method], units=[], inTrip={}, day={};
   function tm(at,lat,lng){ if(!at||lat==null) return {}; var d=new Date(new Date(at).getTime()+9*36e5), h=d.getUTCHours()+d.getUTCMinutes()/60, st=sunTimes(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate(),lat,lng);
     var noon=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),3)), tb=timeBucket(h,hm2h(st.rise),hm2h(st.set)); return {time:tb,moon:tb==="夜"?moonBucket(moonAge(noon)):null}; }
@@ -541,7 +541,24 @@ function renderTrips(){
     return '<div class="triprow"><div class="num">'+fmtAt(t.start)+'〜'+fmtAt(t.end).split(" ")[1]+'</div><div><b>'+esc(t.spot_name||"")+'</b>'+(t.outing&&t.outing!==t.id?' <small>(移動して続き)</small>':'')+' '+fmtDur(new Date(t.end)-new Date(t.start))+' '+(t.total?'<span>釣果'+t.total+'('+esc(fishSummary(t.fish))+')</span>':'<span class="zero">ボウズ</span>')+(c?'<br><small>'+esc(c)+'</small>':'')+(t.memo?'<br><small>'+esc(t.memo)+'</small>':'')+'</div><button class="btn sm" data-trdel="'+esc(t.id)+'">削除</button></div>'; }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-trdel]"),function(b){ b.onclick=function(){ if(b.dataset.armed){ Store.deleteTrip(b.dataset.trdel).catch(function(){}); } else { b.dataset.armed="1"; b.textContent="もう一度押すと削除"; } }; });
 }
-function closeLog(){ document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
+/* ===== 記録を直す:記録の画面を、その記録の中身を入れた状態で開く ===== */
+var editRec=null;
+function openEdit(id){
+  var x=state.catches.filter(function(c){return c.id===id;})[0]; if(!x) return;
+  var fr=!document.getElementById("recView").hidden;
+  openPast(); editRec=x;
+  document.getElementById("logTitle").firstChild.textContent="釣果を直す ";
+  if(x.lat!=null) setPicked({name:x.spot_name,lat:x.lat,lng:x.lng,id:x.spot_id,known:true,match:x.spot_name});
+  document.getElementById("lgAt").value=new Date(new Date(x.at).getTime()+9*36e5).toISOString().slice(0,16);
+  document.getElementById("lgMethod").value=x.method||"eging";
+  var box=document.getElementById("lgItems"); box.innerHTML="";
+  recItems(x).forEach(function(it){ addItem(it.kind); var d=box.lastElementChild; d.querySelector(".in").value=it.count; d.querySelector(".is").value=it.size||"";
+    if(d.querySelector(".ik").value!==it.kind){ d.querySelector(".ik").value="__other"; d.querySelector(".io").hidden=false; d.querySelector(".io").value=it.kind; } });
+  if(!recItems(x).length) document.getElementById("lgMsg").textContent="この記録はボウズです。釣れていたなら「+ 魚を追加」で足してください。";
+  document.getElementById("lgTackle").value=x.tackle||""; document.getElementById("lgDir").value=x.cast_dir||""; document.getElementById("lgWater").value=x.water||""; document.getElementById("lgMemo").value=x.memo||"";
+  if(x.photo) document.getElementById("lgPhotoMsg").textContent="写真あり(新しく選ぶと差し替えます)";
+}
+function closeLog(){ editRec=null; document.getElementById("logTitle").firstChild.textContent="釣果を記録 "; document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
 var logFree=null; /* 過去の釣果:ポイントを選ばずに開いたとき {picked:場所} */
 function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filter(function(x){return x.id===logSpotId;})[0]; }
 function openPast(){
@@ -612,13 +629,16 @@ function saveLog(){
     chain=Store.saveSpot(s.id,keep); }
   document.getElementById("lgSave").disabled=true;
   /* 今の記録も昔の記録も、その場所・その時刻の詳しい条件(水温・前の雨・時化)を付ける。電波が無ければ今わかる分だけ */
-  var old=new Date(iso).getTime()<Date.now()-3*36e5; if(old) msg.textContent="その日の天気と潮を調べています…";
+  var old=new Date(iso).getTime()<Date.now()-3*36e5;
   rec.spot_kind=kindOf(s);
-  chain=chain.then(function(){ return Promise.race([pastCond(rec),new Promise(function(ok){ setTimeout(function(){ok(null);},old?15000:6000); })])
+  var ed=editRec, same=ed&&ed.at&&Math.abs(new Date(ed.at)-new Date(iso))<60000&&ed.lat!=null&&distKm(ed,rec)<0.05;
+  if(ed){ ["createdAt","trip_id","photo","imp"].forEach(function(k){ if(ed[k]!=null) rec[k]=ed[k]; }); rec.editedAt=new Date().toISOString(); if(same&&ed.cond) rec.cond=ed.cond; }
+  if(old&&!same) msg.textContent="その日の天気と潮を調べています…";
+  if(!same) chain=chain.then(function(){ return Promise.race([pastCond(rec),new Promise(function(ok){ setTimeout(function(){ok(null);},old?15000:6000); })])
     .then(function(c){ if(c&&(c.wind_ms!=null||c.tide_phase||c.sst_c!=null)) rec.cond=old?c:Object.assign({},rec.cond,c); }).catch(function(){}); });
   var ph=pendingPhoto; if(ph) rec.photo=true;
-  var at=activeTrip(); if(at&&new Date(iso)>=new Date(at.start)-36e5) rec.trip_id=at.id;
-  chain.then(function(){ return Store.addCatch(rec); }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
+  var at=activeTrip(); if(!ed&&at&&new Date(iso)>=new Date(at.start)-36e5) rec.trip_id=at.id;
+  chain.then(function(){ return ed?Store.setCatch(ed.id,rec):Store.addCatch(rec); }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
     .then(function(){ document.getElementById("lgSave").disabled=false; });
 }
 
@@ -759,11 +779,12 @@ function renderLog(){
     var itxt=its.map(function(it){ var u=/イカ/.test(it.kind)?"杯":"匹"; return esc(it.kind)+' '+it.count+u+(it.size?'('+esc(it.size)+')':''); }).join("、");
     return '<div class="logrow"><div class="lt num">'+fmtAt(x.at)+'</div><div class="lb"><b>'+esc(x.spot_name)+'</b> <span class="cnt'+(its.length?'':' zero')+'">'+(its.length?esc(mname):"ボウズ")+'</span> '+itxt+
       '<small>'+esc([x.tackle||"",x.egi_size?"エギ"+x.egi_size+"号":"",x.egi_color||"",x.cast_dir?x.cast_dir+"へ投げた":"",x.water?WATER_NAME[x.water]:""].filter(Boolean).join(" ・ "))+(cond?' / '+esc(cond):'')+(x.memo?' / '+esc(x.memo):'')+'</small></div>'+
-      '<span>'+(x.photo?'<button class="btn sm" data-lgph="'+esc(x.id)+'">写真</button> ':'')+'<button class="btn sm" data-lgcast="'+esc(x.id)+'">'+(x.cast_dir?'向きを直す':'地図で向き')+'</button>'+(x.cast_dir&&!x.water?' <button class="btn sm" data-lgwater="'+esc(x.id)+'">港内か外海か</button>':'')+' <button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></span></div>';
+      '<span>'+(x.photo?'<button class="btn sm" data-lgph="'+esc(x.id)+'">写真</button> ':'')+'<button class="btn sm" data-lged="'+esc(x.id)+'">直す</button> '+'<button class="btn sm" data-lgcast="'+esc(x.id)+'">'+(x.cast_dir?'向きを直す':'地図で向き')+'</button>'+(x.cast_dir&&!x.water?' <button class="btn sm" data-lgwater="'+esc(x.id)+'">港内か外海か</button>':'')+' <button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></span></div>';
   }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgcast]"),function(b){ b.onclick=function(){
     var x=state.catches.filter(function(c){return c.id===b.dataset.lgcast;})[0]; if(!x||x.lat==null) return;
     var o={lat:x.lat,lng:x.lng}; startCast({id:x.id,phase:"pos",from:o,orig:o}); }; });
+  Array.prototype.forEach.call(el.querySelectorAll("[data-lged]"),function(b){ b.onclick=function(){ openEdit(b.dataset.lged); }; });
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgph]"),function(b){ b.onclick=function(){ showPhoto(b.dataset.lgph); }; });
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgwater]"),function(b){ b.onclick=function(){ askWater(b.dataset.lgwater); }; });
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgdel]"),function(b){ b.onclick=function(){
