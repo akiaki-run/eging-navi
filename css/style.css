@@ -218,3 +218,5 @@ body.recOpen{overflow:hidden}
 .maplegend{background:color-mix(in srgb,var(--card) 90%,transparent);border-radius:8px;padding:4px 8px;font-size:11px;line-height:1.5;color:var(--ink);box-shadow:0 1px 3px rgb(0 0 0 / .25);display:flex;flex-direction:column;gap:2px;max-width:58vw}
 .maplegend span{display:flex;align-items:center;gap:5px}
 .maplegend .pin.lg1{width:16px!important;height:16px!important;font-size:9px!important;border-width:1.5px;flex:none;font-style:normal}
+.windarrow{position:relative;width:34px;height:34px;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
+.windarrow b{position:absolute;right:-6px;bottom:-4px;font:700 11px/1 var(--f-num,system-ui);text-shadow:0 0 2px #fff,0 0 2px #fff}

@@ -165,6 +165,53 @@ function loadView(){
   var b=map.getBounds(), codes=prefsIn(b.getWest(),b.getSouth(),b.getEast(),b.getNorth());
   if(codes.length<=8) codes.forEach(loadPref);
 }
+
+/* ===== 雨雲レーダー:気象庁の降水ナウキャスト(高解像度)。取れなければ RainViewer ===== */
+var radarInfo=null;
+function radarLayer(){
+  var g=L.layerGroup(), tl=null, timer=null, lbl=L.control({position:"bottomright"});
+  lbl.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.id="radarTime"; return d; };
+  function setLbl(t){ var el=document.getElementById("radarTime"); if(el) el.textContent=t; }
+  function load(){
+    fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json").then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(a){
+      var t=a.filter(function(x){ return (x.elements||[]).indexOf("hrpns")>=0; }).sort(function(x,y){ return x.validtime<y.validtime?1:-1; })[0]||a[0];
+      var u="https://www.jma.go.jp/bosai/jmatile/data/nowc/"+t.basetime+"/none/"+t.validtime+"/surf/hrpns/{z}/{x}/{y}.png";
+      show(u,{maxNativeZoom:10,minNativeZoom:4,attribution:'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>'});
+      var v=t.validtime, h=(+v.slice(8,10)+9)%24; setLbl("雨雲 "+String(h).padStart(2,"0")+":"+v.slice(10,12)+" 時点(気象庁)");
+    }).catch(function(){
+      fetch("https://api.rainviewer.com/public/weather-maps.json").then(function(r){ return r.json(); }).then(function(j){
+        var f=j.radar.past[j.radar.past.length-1]; show(j.host+f.path+"/256/{z}/{x}/{y}/2/1_1.png",{maxNativeZoom:7,attribution:'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
+        var d=new Date(f.time*1000+9*36e5); setLbl("雨雲 "+String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0")+" 時点");
+      }).catch(function(){ setLbl("雨雲レーダーを読み込めませんでした"); });
+    });
+  }
+  function show(u,o){ if(tl) g.removeLayer(tl); tl=L.tileLayer(u,Object.assign({opacity:0.6,maxZoom:18,zIndex:5},o)); g.addLayer(tl); }
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); lbl.addTo(m); load(); timer=setInterval(load,5*60000); };
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); lbl.remove(); clearInterval(timer); };
+  return g;
+}
+/* ===== 風の矢印:見ている範囲を格子に分け、選んだ日・時間帯の風を Open-Meteo から取って描く ===== */
+function windLayer(){
+  var g=L.layerGroup(), seq=0;
+  function hourNow(){ var D=jstDate(state.offset), c=baseCond(); var h=(c.slotFrom!=null&&c.slotTo!=null)?Math.round((c.slotFrom+c.slotTo)/2):(state.offset?12:new Date(Date.now()+9*36e5).getUTCHours()); return {key:D.key,h:Math.max(0,Math.min(23,h))}; }
+  function color(ws){ return ws<3?"#2e7d32":(ws<6?"#e0a100":(ws<10?"#e65100":"#c62828")); }
+  function draw(){
+    if(!map||!map.hasLayer(g)) return; var my=++seq, b=map.getBounds(), n=map.getSize().x<500?5:7, pts=[];
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++){ var lat=b.getSouth()+(b.getNorth()-b.getSouth())*(i+0.5)/n, lng=b.getWest()+(b.getEast()-b.getWest())*(j+0.5)/n; pts.push({lat:lat,lng:lng}); }
+    Wx.forecastCells(pts).then(function(){ if(my!==seq) return; g.clearLayers(); var t=hourNow();
+      pts.forEach(function(p){ var dd=Wx.cellDays(p.lat,p.lng), d=dd&&dd[t.key]; if(!d||d.speed[t.h]==null) return;
+        var ws=d.speed[t.h], wd=d.dir[t.h], col=color(ws), to=(wd+180)%360;
+        var html='<div class="windarrow"><svg width="34" height="34" viewBox="-17 -17 34 34" style="transform:rotate('+to+'deg)"><path d="M0 12 L0 -9 M-5 -3 L0 -11 L5 -3" stroke="'+col+'" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><b style="color:'+col+'">'+Math.round(ws)+'</b></div>';
+        g.addLayer(L.marker([p.lat,p.lng],{icon:L.divIcon({className:"",html:html,iconSize:[34,34],iconAnchor:[17,17]}),interactive:false,keyboard:false})); });
+      if(!g.getLayers().length) return; });
+  }
+  var t=null; function later(){ clearTimeout(t); t=setTimeout(draw,400); }
+  function leg(on){ var e=document.getElementById("windLeg"); if(e) e.hidden=!on; }
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.on("moveend",later); draw(); setTimeout(function(){leg(true);},0); };
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.off("moveend",later); leg(false); };
+  var lastT=""; g.redraw=function(){ if(!map||!map.hasLayer(g)) return; var t=hourNow(), k=t.key+"|"+t.h; if(k!==lastT){ lastT=k; later(); } }; window.windLayerRef=g;
+  return g;
+}
 function initMap(){
   if(!window.L){ document.getElementById("map").innerHTML='<div class="empty" style="margin:12px">地図を読み込めませんでした。通信を確認して開き直してください。</div>'; return; }
   map=L.map("map",{minZoom:5,maxZoom:18,zoomSnap:0.25,maxBounds:[[20,118],[48,155]],attributionControl:true});
@@ -178,7 +225,11 @@ function initMap(){
   var base=lsGet("eging-base")||"std";
   ({std:std,pale:pale,photo:photo}[base]||std).addTo(map);
   if(base==="photo"&&lsGet("eging-photolabel")===true) label.addTo(map);
-  L.control.layers({"標準地図(地名あり)":std,"淡い地図":pale,"航空写真(浅瀬・藻場が見える)":photo},{"航空写真に地名を重ねる":label},{position:"topright"}).addTo(map);
+  var radar=radarLayer(), wind=windLayer();
+  L.control.layers({"標準地図(地名あり)":std,"淡い地図":pale,"航空写真(浅瀬・藻場が見える)":photo},{"航空写真に地名を重ねる":label,"雨雲レーダー(今)":radar,"風向・風速の矢印":wind},{position:"topright"}).addTo(map);
+  if(lsGet("eging-radar")===true) radar.addTo(map); if(lsGet("eging-wind")===true) wind.addTo(map);
+  map.on("overlayadd",function(e){ if(e.layer===radar) lsSet("eging-radar",true); if(e.layer===wind) lsSet("eging-wind",true); });
+  map.on("overlayremove",function(e){ if(e.layer===radar) lsSet("eging-radar",false); if(e.layer===wind) lsSet("eging-wind",false); });
   map.on("baselayerchange",function(e){ var k=e.layer===photo?"photo":(e.layer===pale?"pale":"std"); lsSet("eging-base",k); if(k!=="photo"&&map.hasLayer(label)) map.removeLayer(label); });
   map.on("overlayadd",function(e){ if(e.layer===label) lsSet("eging-photolabel",true); });
   map.on("overlayremove",function(e){ if(e.layer===label) lsSet("eging-photolabel",false); });
@@ -191,7 +242,7 @@ function initMap(){
   ctrMarker.on("dragend",function(){areaChanged();});
   spotLayer=L.layerGroup().addTo(map);
   var lg=L.control({position:"bottomleft"});
-  lg.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.innerHTML='<span><i class="pin lg1">1</i>データにある釣り場</span><span><i class="pin auto lg1">1</i>地形からの候補(道・立入は未確認)</span><span><i class="pin mine lg1">1</i>自分のポイント</span><span><i class="pin shared lg1">1</i>仲間の共有</span>'; L.DomEvent.disableClickPropagation(d); return d; };
+  lg.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.innerHTML='<span><i class="pin lg1">1</i>データにある釣り場</span><span><i class="pin auto lg1">1</i>地形からの候補(道・立入は未確認)</span><span><i class="pin mine lg1">1</i>自分のポイント</span><span><i class="pin shared lg1">1</i>仲間の共有</span><span id="windLeg" hidden>→ 矢印は風が吹いていく向き、数字は風速(m)。緑3m未満・黄6m未満・橙10m未満・赤10m以上</span>'; L.DomEvent.disableClickPropagation(d); return d; };
   lg.addTo(map);
   map.fitBounds(circle.getBounds(),{padding:[16,16]});
   map.on("moveend",loadView); loadView();
@@ -936,6 +987,7 @@ function showAdd(){ var f=document.getElementById("addForm"); f.hidden=false; do
 function render(){
   if(state._memoKey!==state.slot+'|'+state.offset+'|'+JSON.stringify(state.manual)){ condMemo={}; state._memoKey=state.slot+'|'+state.offset+'|'+JSON.stringify(state.manual); }
   var c=baseCond(), D=jstDate(state.offset);
+  if(window.windLayerRef) windLayerRef.redraw();
   document.getElementById("d0").setAttribute("aria-pressed",state.offset===0);
   document.getElementById("d1").setAttribute("aria-pressed",state.offset===1);
   document.getElementById("diaV").textContent=state.dia;
