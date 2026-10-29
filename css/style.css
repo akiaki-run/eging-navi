@@ -239,3 +239,19 @@ body.recOpen{overflow:hidden}
 .maplegend.folded span{display:none!important}
 .hit{width:32px;height:32px;display:grid;place-items:center;cursor:pointer}
 .pin.dotr{width:10px;height:10px;background:var(--buoy);border:1.5px solid var(--card)}.pin.dotr.auto{background:var(--sea)}
+#dMore{font:inherit;font-size:.85rem;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);margin-left:4px}
+#dMore.on{border-color:var(--buoy);font-weight:700}
+#calView{position:fixed;inset:0;z-index:1500;background:var(--paper);overflow-y:auto;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(24px + env(safe-area-inset-bottom,0px))}
+#calView[hidden]{display:none}
+.calnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 4px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:6px}
+.calgrid .wd{font-size:.75rem;text-align:center;color:var(--sub);padding:2px 0}
+.calgrid .wd.sun{color:#c62828}.calgrid .wd.sat{color:#1565c0}
+.calgrid button.cd{font:inherit;min-height:62px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);padding:3px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer}
+.calgrid .cd .n{font-size:.8rem;font-weight:700}.calgrid .cd .t{font-size:.78rem;font-weight:700;border-radius:4px;padding:0 3px}
+.calgrid .cd .r{font-size:.68rem;color:var(--sub)}
+.calgrid .cd.today{outline:2px solid var(--buoy)}.calgrid .cd.sel{background:color-mix(in srgb,var(--buoy) 14%,var(--card))}
+.calgrid .cd.empty{visibility:hidden}
+.t.大潮{background:#ffd6d0;color:#a3170a}.t.中潮{background:#ffe9c2;color:#8a5200}.t.小潮{background:#dbeafe;color:#1e4d8f}.t.長潮,.t.若潮{background:#e6e6e6;color:#444}
+.calday{margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.9rem}
+.calday:empty{display:none}

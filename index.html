@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261029q">
+<link rel="stylesheet" href="css/style.css?v=20261029s">
 </head>
 <body>
 <div class="wrap">
@@ -23,6 +23,8 @@
     <div class="seg" role="group" aria-label="日付">
       <button id="d0" aria-pressed="true">今日</button>
       <button id="d1" aria-pressed="false">明日</button>
+      <select id="dMore" aria-label="その先の日"></select>
+      <button id="calOpen" type="button">潮カレンダー</button>
     </div>
   </div>
 </header>
@@ -42,7 +44,7 @@
   <div class="qres" id="qres" hidden></div>
   <div id="map" role="application" aria-label="範囲を決める地図"></div>
   <div class="maptime" id="mapTime" hidden><div class="mtrow"><b id="mtLabel"></b> <button class="btn sm" type="button" id="mtNow">今</button> <button class="btn sm" type="button" id="mtSlot">選んだ時間帯</button></div>
-    <input type="range" id="mtRange" min="-3" max="47" step="1" aria-label="雨雲と風の矢印の時刻"><div class="src">雨雲は少し前〜1時間先まで、風の矢印は2日先まで見られます</div></div>
+    <input type="range" id="mtRange" min="-3" max="47" step="1" aria-label="雨雲と風の矢印の時刻"><div class="src">雨雲は少し前〜1時間先まで、風の矢印は選んだ日の次の日まで見られます</div></div>
   <div class="ctrls">
     <label for="dia">範囲の直径
       <input type="range" id="dia" min="2" max="100" step="1" value="20"></label>
@@ -133,6 +135,16 @@
   <details class="outer" id="outerBox"><summary id="outerSum"></summary><div class="spots" id="spotsOut"></div></details>
 </section>
 
+<div id="calView" hidden role="dialog" aria-labelledby="calTitle">
+  <div class="recIn">
+    <div class="recHead"><button class="btn" type="button" id="calClose">← 地図に戻る</button><h2 id="calTitle">潮カレンダー</h2></div>
+    <div class="calnav"><button class="btn sm" type="button" id="calPrev">◀ 前の月</button><b id="calMonth"></b><button class="btn sm" type="button" id="calNext">次の月 ▶</button></div>
+    <div class="src" id="calSt"></div>
+    <div id="calGrid" class="calgrid"></div>
+    <div id="calDay" class="calday"></div>
+    <p class="src">潮名は月齢から、満潮・干潮と干満差は気象庁の潮位表(推算)から出しています。天気は含みません。15日先までの日は、押すとその日のおすすめに切り替えられます。</p>
+  </div>
+</div>
 <div id="recView" hidden role="dialog" aria-labelledby="recTitle">
   <div class="recIn">
     <div class="recHead"><button class="btn" type="button" id="recClose">← 地図に戻る</button><h2 id="recTitle">釣果の記録</h2></div>
@@ -192,10 +204,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261029q"></script>
-<script src="js/engine.js?v=20261029q"></script>
-<script src="js/wx.js?v=20261029q"></script>
-<script src="js/store.js?v=20261029q"></script>
-<script src="js/app.js?v=20261029q"></script>
+<script src="firebase-config.js?v=20261029s"></script>
+<script src="js/engine.js?v=20261029s"></script>
+<script src="js/wx.js?v=20261029s"></script>
+<script src="js/store.js?v=20261029s"></script>
+<script src="js/app.js?v=20261029s"></script>
 </body>
 </html>

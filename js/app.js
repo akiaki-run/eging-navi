@@ -178,7 +178,7 @@ function fmtJst(ms){ var d=new Date(ms+9*36e5); return (d.getUTCMonth()+1)+"/"+d
 function mapTimeChanged(){ mapTime.subs.forEach(function(f){ try{ f(); }catch(e){ console.warn(e); } }); renderMapTime(); }
 function renderMapTime(){ var box=document.getElementById("mapTime"); if(!box) return; var on=map&&(map.hasLayer(radarRef||{})||map.hasLayer(window.windLayerRef||{}));
   box.hidden=!on; if(!on) return; var now=Math.floor(Date.now()/36e5)*36e5, t=mapT(), r=document.getElementById("mtRange");
-  r.min=-3; r.max=47; r.value=Math.round((t-now)/36e5);
+  r.min=-3; r.max=Math.min(15*24+23,(state.offset+2)*24); r.value=Math.round((t-now)/36e5);
   document.getElementById("mtLabel").textContent=(Math.abs(t-Date.now())<36e5*0.5?"今 ":"")+fmtJst(t)+(mapTime.follow?"(選んだ時間帯)":""); }
 var radarRef=null;
 /* ===== 雨雲レーダー:気象庁の降水ナウキャスト(高解像度)。取れなければ RainViewer ===== */
@@ -1033,6 +1033,7 @@ function render(){
   if(window.windLayerRef) windLayerRef.redraw();
   document.getElementById("d0").setAttribute("aria-pressed",state.offset===0);
   document.getElementById("d1").setAttribute("aria-pressed",state.offset===1);
+  var dm=document.getElementById("dMore"); dm.value=state.offset>=2?String(state.offset):""; dm.classList.toggle("on",state.offset>=2);
   document.getElementById("diaV").textContent=state.dia;
   hint();
   var wind=c.wind_ms!=null?(esc(c.wind_dir||"")+" "+c.wind_ms+"m"):"—";
@@ -1054,14 +1055,14 @@ function render(){
   drawPins(ranked);
   var pick=document.getElementById("pick");
   if(!ranked.length){
-    pick.innerHTML='<div class="eyebrow">'+(state.offset===0?"今日":"明日")+'の一押し</div><div class="empty">円の中にポイントがありません。地形からの自動候補は直径40km以下で出ます。行きたい港や磯は「タップでポイントを追加」で登録できます。</div>';
+    pick.innerHTML='<div class="eyebrow">'+dayLabel(state.offset)+'の一押し</div><div class="empty">円の中にポイントがありません。地形からの自動候補は直径40km以下で出ます。行きたい港や磯は「タップでポイントを追加」で登録できます。</div>';
     document.getElementById("rank").innerHTML='<div class="empty">円の中のポイントはまだありません。</div>';
     drawTide(c,null,[]); renderSpots(ranked,c); renderLog(); return;
   }
   var moreEl=document.querySelector('#pick details.more'), moreOpen=moreEl?moreEl.open:null;
   var top=ranked[0], ct=c.condFor?c.condFor(top.spot):c, wins=bestWindows(ct,top.spot,Math.max(state.offset===0?nowH():0,state.slot==="custom"?c.slotFrom:0),state.slot==="custom"?c.slotTo:24);
   var winHtml=wins.length?wins.map(function(w){return '<span class="chip'+(/マヅメ/.test(w.label)?' dusk':'')+'"><b class="num">'+h2hm(w.s)+'〜'+h2hm(w.e)+'</b>'+esc(w.label)+'</span>';}).join(""):'<span class="chip">今日はもう遅い時間です。明日を見てください</span>';
-  pick.innerHTML='<div class="eyebrow">'+(state.offset===0?"今日":"明日")+'の一押し</div>'+
+  pick.innerHTML='<div class="eyebrow">'+dayLabel(state.offset)+'の一押し'+(state.offset>=7?'<span style="font-weight:400">(1週間より先の天気・風の予報は外れやすいので目安。潮は確か)</span>':'')+'</div>'+
     '<div class="name">'+esc(top.spot.name)+'</div>'+
     '<div class="meta">'+esc(top.spot.area||"自分で追加")+' ・ 中心から約'+top.dist.toFixed(1)+'km'+(fishLine(top.spot)?' ・ '+esc(fishLine(top.spot)):'')+'</div>'+
     '<div class="when">'+winHtml+'</div>'+(condLine(c,top.spot)?'<div class="fishlog">'+esc(condLine(c,top.spot))+'</div>':'')+
@@ -1182,6 +1183,46 @@ document.getElementById("addSave").onclick=function(){
 document.getElementById("lgDir").innerHTML='<option value="">—</option>'+DIRS16.map(function(d){return "<option>"+d+"</option>";}).join("");
 document.getElementById("lgSave").onclick=saveLog;
 document.getElementById("lgCancel").onclick=closeLog;
+
+/* ===== 潮カレンダー:地図の中心にいちばん近い観測地点の、1か月分の潮 ===== */
+var cal={y:0,m:0,sel:null};
+function openCal(){ var D=jstDate(0); cal.y=D.y; cal.m=D.m; cal.sel=jstDate(state.offset).key; document.getElementById("calView").hidden=false; document.body.classList.add("recOpen"); drawCal(); }
+function closeCal(){ document.getElementById("calView").hidden=true; document.body.classList.remove("recOpen"); }
+function drawCal(){
+  var ym=cal.y+"-"+String(cal.m).padStart(2,"0"); document.getElementById("calMonth").textContent=cal.y+"年"+cal.m+"月";
+  var grid=document.getElementById("calGrid"), stEl=document.getElementById("calSt");
+  Wx.loadStations().then(function(){ var st=Wx.nearestStation(state.center);
+    stEl.textContent=st?"観測地点:"+st.name+"(地図の中心から約"+Math.round(st.dist)+"km)":"潮位表を読み込めませんでした(潮名だけ出します)";
+    var p=st?Wx.tideDay(st.code,ym+"-01").catch(function(){return null;}):Promise.resolve(null);
+    p.then(function(){ var first=new Date(Date.UTC(cal.y,cal.m-1,1)), nd=new Date(Date.UTC(cal.y,cal.m,0)).getUTCDate(), today=jstDate(0).key;
+      var h=["日","月","火","水","木","金","土"].map(function(w,i){ return '<div class="wd'+(i===0?" sun":(i===6?" sat":""))+'">'+w+'</div>'; }).join("");
+      for(var k=0;k<first.getUTCDay();k++) h+='<button class="cd empty" tabindex="-1"></button>';
+      for(var d=1;d<=nd;d++){ var key=ym+"-"+String(d).padStart(2,"0"), noon=new Date(Date.UTC(cal.y,cal.m-1,d,3)), tn=tideNameFromAge(moonAge(noon)), ti=st?Wx.tideInfo(st.code,key):null;
+        h+='<button class="cd'+(key===today?" today":"")+(key===cal.sel?" sel":"")+'" data-k="'+key+'"><span class="n">'+d+'</span><span class="t '+tn+'">'+tn+'</span><span class="r">'+(ti&&ti.range!=null?Math.round(ti.range)+"cm":"")+'</span></button>'; }
+      grid.innerHTML=h;
+      Array.prototype.forEach.call(grid.querySelectorAll("button.cd[data-k]"),function(b){ b.onclick=function(){ cal.sel=b.dataset.k; drawCal(); }; });
+      drawCalDay(st);
+    });
+  });
+}
+function drawCalDay(st){
+  var el=document.getElementById("calDay"), key=cal.sel; if(!key||key.slice(0,7)!==cal.y+"-"+String(cal.m).padStart(2,"0")){ el.innerHTML=""; return; }
+  var y=+key.slice(0,4), m=+key.slice(5,7), d=+key.slice(8,10), noon=new Date(Date.UTC(y,m-1,d,3)), age=moonAge(noon), tn=tideNameFromAge(age), ti=st?Wx.tideInfo(st.code,key):null, sun=sunTimes(y,m,d,state.center.lat,state.center.lng);
+  var off=Math.round((Date.UTC(y,m-1,d)-Date.UTC(jstDate(0).y,jstDate(0).m-1,jstDate(0).d))/864e5);
+  var ev=function(a){ return (a||[]).map(function(e){ return e[0]+"("+e[1]+"cm)"; }).join("・")||"—"; };
+  el.innerHTML='<b>'+m+'/'+d+'('+"日月火水木金土"[new Date(Date.UTC(y,m-1,d)).getUTCDay()]+') '+esc(tn)+'</b> <span class="src">月齢'+age.toFixed(1)+'・夜は'+({"月夜":"月明かりあり","闇夜":"闇夜"}[moonBucket(age)]||"半月ほど")+'</span>'+
+    '<div>満潮:'+esc(ti?ev(ti.day.hi):"—")+'</div><div>干潮:'+esc(ti?ev(ti.day.lo):"—")+'</div>'+
+    (ti&&ti.range!=null?'<div>干満差:'+Math.round(ti.range)+'cm'+(ti.mean?'(この月の平均 '+Math.round(ti.mean)+'cm)':'')+'</div>':'')+
+    '<div>日の出 '+sun.rise+'・日の入り '+sun.set+'</div>'+
+    (off>=0&&off<=15?'<div style="margin-top:6px"><button class="btn sm pri" id="calGo">この日のおすすめを見る</button></div>':'');
+  var g=document.getElementById("calGo"); if(g) g.onclick=function(){ state.offset=off; state.manual=null; closeCal(); render(); loadConditions(); document.getElementById("pick").scrollIntoView({behavior:"smooth",block:"start"}); };
+}
+function dayLabel(off){ if(off===0) return "今日"; if(off===1) return "明日"; var D=jstDate(off), d=new Date(Date.UTC(D.y,D.m-1,D.d)); return D.m+"/"+D.d+"("+"日月火水木金土"[d.getUTCDay()]+")"; }
+(function(){ var sel=document.getElementById("dMore"), h='<option value="">その先の日</option>'; for(var i=2;i<=15;i++) h+='<option value="'+i+'">'+dayLabel(i)+(i>=7?"・予報は目安":"")+'</option>'; sel.innerHTML=h;
+  sel.onchange=function(){ if(!sel.value) return; state.offset=+sel.value; state.manual=null; render(); loadConditions(); }; })();
+document.getElementById("calOpen").onclick=openCal; document.getElementById("calClose").onclick=closeCal;
+document.getElementById("calPrev").onclick=function(){ cal.m--; if(cal.m<1){ cal.m=12; cal.y--; } drawCal(); };
+document.getElementById("calNext").onclick=function(){ cal.m++; if(cal.m>12){ cal.m=1; cal.y++; } drawCal(); };
 document.getElementById("d0").onclick=function(){state.offset=0;state.manual=null;render();loadConditions();};
 document.getElementById("d1").onclick=function(){state.offset=1;state.manual=null;render();loadConditions();};
 (function(){
