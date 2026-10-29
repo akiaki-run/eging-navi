@@ -237,16 +237,18 @@ function loadView(){
 
 /* ===== 地図の時刻(雨雲・風の矢印で使う)。バーで動かす。動かしていなければ選んだ日・時間帯に合わせる ===== */
 var mapTime={t:null,follow:true,subs:[]};
+function r10(ms){ return Math.round(ms/6e5)*6e5; }
+function mtBase(){ if(state.offset===0){ var now=r10(Date.now()); return {t0:now-3*36e5,n:27*6}; } var D=jstDate(state.offset); return {t0:Date.UTC(D.y,D.m-1,D.d)-9*36e5,n:24*6}; }
 function slotMidTime(){ var D=jstDate(state.offset), c=baseCond(), h=(c.slotFrom!=null&&c.slotTo!=null)?(c.slotFrom+c.slotTo)/2:(state.offset?12:nowH());
   h=Math.max(0,Math.min(23.5,h)); return Date.UTC(D.y,D.m-1,D.d,0,0)-9*36e5+Math.round(h)*36e5; }
-function mapT(){ return mapTime.follow||mapTime.t==null?slotMidTime():mapTime.t; }
+function mapT(){ return r10(mapTime.follow||mapTime.t==null?slotMidTime():mapTime.t); }
 function jstKH(ms){ var d=new Date(ms+9*36e5); return {key:d.toISOString().slice(0,10),h:d.getUTCHours(),m:d.getUTCMinutes()}; }
 function fmtJst(ms){ var d=new Date(ms+9*36e5); return (d.getUTCMonth()+1)+"/"+d.getUTCDate()+"("+"日月火水木金土"[d.getUTCDay()]+") "+String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0"); }
 function mapTimeChanged(){ mapTime.subs.forEach(function(f){ try{ f(); }catch(e){ console.warn(e); } }); renderMapTime(); }
 function renderMapTime(){ var box=document.getElementById("mapTime"); if(!box) return; var on=map&&(map.hasLayer(radarRef||{})||map.hasLayer(window.windLayerRef||{}));
-  box.hidden=!on; if(!on) return; var now=Math.floor(Date.now()/6e5)*6e5, t=mapT(), r=document.getElementById("mtRange");
-  /* バーは10分きざみ。値は「今から何10分後か」 */
-  r.min=-18; r.max=Math.min((MAXDAY+1)*24-1,(state.offset+2)*24)*6; r.value=Math.round((t-now)/6e5);
+  box.hidden=!on; if(!on) return; var t=mapT(), r=document.getElementById("mtRange"), B=mtBase();
+  /* バーは10分きざみ。今日は「3時間前〜24時間後」、ほかの日はその日の0時〜24時 */
+  r.min=0; r.max=B.n; r.value=Math.max(0,Math.min(B.n,Math.round((t-B.t0)/6e5)));
   document.getElementById("mtLabel").textContent=(Math.abs(t-Date.now())<36e5*0.5?"今 ":"")+fmtJst(t)+(mapTime.follow?"(選んだ時間帯)":""); }
 var radarRef=null;
 /* ===== 雨雲レーダー:気象庁の降水ナウキャスト(高解像度)。取れなければ RainViewer ===== */
@@ -1614,13 +1616,13 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=curLogSpot(); if(!s){ document.getElementById("lgMsg").textContent="先に場所を選んでください。"; return; } document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
   document.getElementById("pastBtn").onclick=openPast;
   (function(){ var r=document.getElementById("mtRange"), tt=null;
-    r.oninput=function(){ var now=Math.floor(Date.now()/6e5)*6e5; mapTime.t=now+(+r.value)*6e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,150); };
-    function stepT(min){ var t=mapT()+min*60000, now=Date.now(), lo=now-3*36e5, hi=Math.floor(now/6e5)*6e5+(+r.max)*6e5; mapTime.t=Math.max(lo,Math.min(hi,t)); mapTime.follow=false; mapTimeChanged(); }
+    r.oninput=function(){ mapTime.t=mtBase().t0+(+r.value)*6e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,150); };
+    function stepT(min){ var B=mtBase(), t=r10(mapT()+min*60000); mapTime.t=Math.max(B.t0,Math.min(B.t0+B.n*6e5,t)); mapTime.follow=false; mapTimeChanged(); }
     /* 雨雲が見られる時間(少し前〜1時間先)の中では10分ずつ、それ以外は1時間ずつ動かす */
     function stepSize(dir){ var t=mapT(), now=Date.now(), rad=map&&radarRef&&map.hasLayer(radarRef); return (rad&&t+dir*600000>=now-3*36e5&&t+dir*600000<=now+65*60000)?10:60; }
     document.getElementById("mtPrev").onclick=function(){ stepT(-stepSize(-1)); };
     document.getElementById("mtNext").onclick=function(){ stepT(stepSize(1)); };
-    document.getElementById("mtNow").onclick=function(){ mapTime.t=Date.now(); mapTime.follow=false; mapTimeChanged(); };
+    document.getElementById("mtNow").onclick=function(){ if(state.offset!==0){ document.getElementById("d0").click(); } mapTime.t=r10(Date.now()); mapTime.follow=false; mapTimeChanged(); };
     document.getElementById("mtSlot").onclick=function(){ mapTime.follow=true; mapTimeChanged(); }; })();
   document.getElementById("pastBtn2").onclick=openPast;
   document.getElementById("recOpen").onclick=function(){ recView(true); };
