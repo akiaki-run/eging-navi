@@ -1280,7 +1280,8 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   Store.on("sync",window.showSync=function(sy){ var el=document.getElementById("syncState"); if(!el) return; if(Store.mode!=="cloud"){ el.textContent=""; return; }
     var ks=["catches","trips"].filter(function(k){return sy[k];}); if(!ks.length){ el.textContent="アカウントを読み込み中…"; return; }
     var pend=ks.reduce(function(a,k){return a+sy[k].pending;},0), cache=ks.some(function(k){return sy[k].cache;}), n=ks.reduce(function(a,k){return a+sy[k].n;},0);
-    el.textContent=pend?"未送信 "+pend+"件(電波が戻ると送ります)":(cache?"サーバーにつながっていません(端末に保存した分を表示中)":"アカウントと同期済み(釣果・釣行 "+n+"件)"); });
+    var ob=sy.outbox||0; if(ob>pend) pend=ob;
+    el.textContent=pend?"未送信 "+pend+"件(サーバーが受け取るまで端末に控えを残し、送り直します)":(cache?"サーバーにつながっていません(端末に保存した分を表示中)":"アカウントと同期済み(釣果・釣行 "+n+"件)"); });
   Store.on("syncError",function(m){ var el=document.getElementById("syncErr"); if(!el) return; el.hidden=!m; el.textContent=m||""; });
   Store.on("trips",function(list){ state.trips=list; renderTrips(); render(); });
   document.getElementById("lgHere").onclick=useHere;
