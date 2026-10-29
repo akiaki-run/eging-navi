@@ -71,6 +71,8 @@ var Store=(function(){
     return loadScript(base+"firebase-app-compat.js").then(function(){ return Promise.all([loadScript(base+"firebase-auth-compat.js"),loadScript(base+"firebase-firestore-compat.js")]); })
       .then(function(){
         fb=firebase.initializeApp(cfg); db=firebase.firestore();
+        /* スマホのブラウザや通信によっては、つなぎっぱなしの通信が止められてサーバーに届かない。短い通信をくり返す方法でつなぐ */
+        try{ db.settings({experimentalForceLongPolling:true,merge:true}); }catch(e){ console.warn(e); }
         /* 電波が無くても書き込みを端末にため、つながったら自動で送る */
         try{ db.enablePersistence({synchronizeTabs:true}).catch(function(e){ console.warn("端末への保存を使えません",e); }); }catch(e){}
         firebase.auth().onAuthStateChanged(function(user){ if(user) startCloud(user); else if(mode==="cloud") stopCloud(); else emit("auth"); });
