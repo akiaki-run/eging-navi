@@ -1144,12 +1144,12 @@ function castTap(ll){
   if(ed.phase==="tripPlace"){ state.castEdit=null; var t=activeTrip(); if(t){ t.lat=ll.lat; t.lng=ll.lng; var pa=placeAt(ll); t.spot_id=pa.spot_id; t.name=pa.name; setActiveTrip(t); } document.getElementById("tripMsg").textContent="釣り場を「"+(t?t.name:"")+"」にしました。"; return; }
   if(ed.phase==="place"){ state.castEdit=null; var near=placeCands().filter(function(x){return distKm(x,ll)<0.3;}).sort(function(a,b){return distKm(ll,a)-distKm(ll,b);})[0];
     setPicked(near?{name:near.name,lat:near.lat,lng:near.lng,id:near.id||null,known:true,match:near.name}:{name:townShort(ll).short||"地図で選んだ場所",lat:ll.lat,lng:ll.lng,id:null,known:false});
-    document.getElementById("logSheet").hidden=false; return; }
+    document.getElementById("logSheet").hidden=false; if(ed.fromRec) recView(true); return; }
   if(ed.phase==="pos"){ ed.from=ll; ed.phase="dir"; castMark(ll,null); alertMsg("次に、投げた先の海をタップしてください",15000); return; }
   var deg=bearing(ed.from,ll), di=Math.round(deg/22.5)%16, dir=DIRS16[di]; castMark(ed.from,ll); state.castEdit=null;
   var op=measureOpen(ed.from.lat,ed.from.lng), guess=op&&op[di]!=null?(op[di]>=1.5?"outer":"inner"):"";
   setTimeout(function(){ if(castLayer){ castLayer.remove(); castLayer=null; } },4000);
-  if(ed.sheet){ document.getElementById("lgDir").value=dir; var w=document.getElementById("lgWater"); if(!w.value) w.value=guess; document.getElementById("logSheet").hidden=false; alertMsg(dir+"向きにしました。「投げた先」が港内か外海側かも確認してください",6000); return; }
+  if(ed.sheet){ if(ed.fromRec) recView(true); document.getElementById("lgDir").value=dir; var w=document.getElementById("lgWater"); if(!w.value) w.value=guess; document.getElementById("logSheet").hidden=false; alertMsg(dir+"向きにしました。「投げた先」が港内か外海側かも確認してください",6000); return; }
   var patch={cast_dir:dir,cast_deg:Math.round(deg)};
   if(distKm(ed.from,ed.orig)>0.02){ patch.lat=ed.from.lat; patch.lng=ed.from.lng;
     var x=state.catches.filter(function(c){return c.id===ed.id;})[0], sp=x&&state.mine.filter(function(m){return m.id===x.spot_id&&m.from_import;})[0];
@@ -1293,7 +1293,7 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("lgPlace").onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); searchPlace(); } };
   document.getElementById("lgPlaceMap").onclick=function(){
     var q=document.getElementById("lgPlace").value.trim(), ro=document.getElementById("lgPlace").readOnly, pk=logFree&&logFree.picked;
-    function open(ll,z){ document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place"};
+    function open(ll,z){ var fr=!document.getElementById("recView").hidden; if(fr) recView(false); document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place",fromRec:fr};
       if(ll) map.setView([ll.lat,ll.lng],z||14); document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"});
       alertMsg("釣った場所を地図でタップしてください"+(ll?"(入れた場所のあたりを出しています)":"。場所の欄に県や市、港の名前を入れてから押すと、そのあたりの地図が出ます"),15000); }
     if(!q||ro){ open(pk?{lat:pk.lat,lng:pk.lng}:null,16); return; }
