@@ -55,7 +55,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 @media (max-width:420px){.grow{grid-template-columns:1fr 1fr}.grow .lb{grid-column:1/-1}}
 .pin.auto{background:var(--card);color:var(--buoy);border:2px solid var(--buoy)}
 .pin.out.auto{background:transparent;border:1.5px solid var(--mute)}
-.ctr{box-sizing:border-box;width:18px;height:18px;border-radius:50%;background:var(--ink);border:3px solid var(--card);box-shadow:0 0 0 2px var(--ink)}
+.ctr{box-sizing:border-box;width:24px;height:24px;border-radius:50%;background:var(--ink);border:3px solid var(--card);box-shadow:0 0 0 2px var(--ink)}
 .ctrls{display:grid;grid-template-columns:1fr auto;gap:8px 14px;align-items:center}
 .ctrls label{display:flex;align-items:center;gap:10px;font-size:.9rem;min-width:0}
 .ctrls input[type=range]{flex:1;min-width:0;accent-color:var(--buoy)}
@@ -226,3 +226,14 @@ body.recOpen{overflow:hidden}
 .maptime{margin:6px 0 2px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
 .maptime .mtrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .maptime input[type=range]{width:100%;margin:6px 0 2px}
+/* 雨雲を見やすく:雨雲を出している間は、下の地図を薄い灰色にする */
+.radar-on .leaflet-tile-pane>.leaflet-layer:not(.radartiles){filter:grayscale(1) brightness(1.08) contrast(.85)}
+.radarleg .rscale{display:flex;align-items:center;gap:2px;margin-top:3px;font-size:10px}
+.radarleg .rscale i{display:inline-block;width:12px;height:10px;border-radius:2px}
+.radarleg .rscale small{margin-left:3px;color:var(--sub)}
+.pp{font-size:.9rem;line-height:1.4}.pp .src{margin:2px 0 6px}.ppb{display:flex;flex-wrap:wrap;gap:4px}
+.leaflet-popup-content{margin:10px 12px}
+.maphere{background:var(--card);box-shadow:0 1px 4px rgb(0 0 0 / .3);margin-top:6px!important}
+.maplegend .lgtoggle{font:inherit;font-size:11px;font-weight:700;border:none;background:none;color:var(--ink);padding:0;cursor:pointer;text-align:left}
+.maplegend .lgtoggle::after{content:" ▾"}.maplegend.folded .lgtoggle::after{content:" ▸"}
+.maplegend.folded span{display:none!important}

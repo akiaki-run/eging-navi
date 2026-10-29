@@ -185,7 +185,7 @@ var radarRef=null;
 var radarInfo=null;
 function radarLayer(){
   var g=L.layerGroup(), tl=null, timer=null, frames=[], src="", lbl=L.control({position:"bottomright"});
-  lbl.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.id="radarTime"; return d; };
+  lbl.onAdd=function(){ var w=L.DomUtil.create("div","maplegend radarleg"); w.innerHTML='<div id="radarTime"></div><div class="rscale"><i style="background:#a0d2ff"></i>1<i style="background:#218cff"></i>5<i style="background:#0041ff"></i>10<i style="background:#fff500"></i>20<i style="background:#ff9900"></i>30<i style="background:#ff2800"></i>50<i style="background:#b40068"></i>80<small>mm/時</small></div>'; return w; };
   function setLbl(t){ var el=document.getElementById("radarTime"); if(el) el.textContent=t; }
   function jt(v){ return Date.UTC(+v.slice(0,4),+v.slice(4,6)-1,+v.slice(6,8),+v.slice(8,10),+v.slice(10,12)); }
   function load(){
@@ -204,11 +204,11 @@ function radarLayer(){
     frames.forEach(function(f){ if(!best||Math.abs(f.t-t)<Math.abs(best.t-t)) best=f; });
     var lo=Math.min.apply(null,frames.map(function(f){return f.t;})), hi=Math.max.apply(null,frames.map(function(f){return f.t;}));
     if(Math.abs(best.t-t)>40*60000){ if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setLbl("雨雲は "+fmtJst(lo).split(" ")[1]+"〜"+fmtJst(hi).split(" ")[1]+" の分だけ見られます(バーを近づけてください)"); return; }
-    if(best.u!==shownU){ var old=tl; tl=L.tileLayer(best.u,{opacity:0.6,maxZoom:18,zIndex:5,maxNativeZoom:src==="jma"?10:7,minNativeZoom:src==="jma"?4:0,attribution:src==="jma"?'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>':'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
+    if(best.u!==shownU){ var old=tl; tl=L.tileLayer(best.u,{opacity:0.9,className:"radartiles",maxZoom:18,zIndex:5,maxNativeZoom:src==="jma"?10:7,minNativeZoom:src==="jma"?4:0,attribution:src==="jma"?'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>':'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
       g.addLayer(tl); if(old) setTimeout(function(){ g.removeLayer(old); },400); shownU=best.u; }
     setLbl("雨雲 "+fmtJst(best.t)+(best.t>Date.now()+5*60000?"(予測)":"")+(src==="jma"?"(気象庁)":"")); }
-  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
-  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); lbl.remove(); clearInterval(timer); if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setTimeout(renderMapTime,0); };
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.getContainer().classList.add("radar-on"); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.getContainer().classList.remove("radar-on"); lbl.remove(); clearInterval(timer); if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setTimeout(renderMapTime,0); };
   mapTime.subs.push(pick); radarRef=g;
   return g;
 }
@@ -259,13 +259,13 @@ function initMap(){
   map.on("zoomend",function(){ drawPins(lastRanked); });
   L.control.scale({imperial:false,position:"bottomleft"}).addTo(map);
   circle=L.circle([state.center.lat,state.center.lng],{radius:radius()*1000,color:css("--ring"),weight:3,dashArray:"8 6",fill:false,interactive:false}).addTo(map);
-  ctrMarker=L.marker([state.center.lat,state.center.lng],{draggable:true,icon:L.divIcon({className:"",html:'<div class="ctr"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:1000,keyboard:false}).addTo(map);
+  ctrMarker=L.marker([state.center.lat,state.center.lng],{draggable:true,icon:L.divIcon({className:"",html:'<div class="ctr"></div>',iconSize:[24,24],iconAnchor:[12,12]}),zIndexOffset:1000,keyboard:false}).addTo(map);
   ctrMarker.bindTooltip("中心(ドラッグで移動)",{direction:"top",offset:[0,-10]});
   ctrMarker.on("drag",function(e){var ll=e.target.getLatLng();state.center={lat:ll.lat,lng:ll.lng};circle.setLatLng(ll);});
   ctrMarker.on("dragend",function(){areaChanged();});
   spotLayer=L.layerGroup().addTo(map);
   var lg=L.control({position:"bottomleft"});
-  lg.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.innerHTML='<span><i class="pin lg1">1</i>データにある釣り場</span><span><i class="pin auto lg1">1</i>地形からの候補(道・立入は未確認)</span><span><i class="pin mine lg1">1</i>自分のポイント</span><span><i class="pin shared lg1">1</i>仲間の共有</span><span id="windLeg" hidden>→ 矢印は風が吹いていく向き、数字は風速(m)。緑3m未満・黄6m未満・橙10m未満・赤10m以上</span>'; L.DomEvent.disableClickPropagation(d); return d; };
+  lg.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"+(window.innerWidth<700?" folded":"")); d.innerHTML='<button type="button" class="lgtoggle">色の説明</button>'+'<span><i class="pin lg1">1</i>データにある釣り場</span><span><i class="pin auto lg1">1</i>地形からの候補(道・立入は未確認)</span><span><i class="pin mine lg1">1</i>自分のポイント</span><span><i class="pin shared lg1">1</i>仲間の共有</span><span id="windLeg" hidden>→ 矢印は風が吹いていく向き、数字は風速(m)。緑3m未満・黄6m未満・橙10m未満・赤10m以上</span>'; L.DomEvent.disableClickPropagation(d); d.querySelector(".lgtoggle").onclick=function(){ d.classList.toggle("folded"); }; return d; };
   lg.addTo(map);
   map.fitBounds(circle.getBounds(),{padding:[16,16]});
   map.on("moveend",loadView); loadView();
@@ -274,8 +274,14 @@ function initMap(){
     if(state.castEdit){ castTap(ll); return; }
     if(state.fixId){ savePos(state.fixId,ll); state.fixId=null; setMode("center"); return; }
     if(state.mode==="add"){ state.addAt=ll; showAdd(); return; }
-    state.center=ll; ctrMarker.setLatLng(e.latlng); circle.setLatLng(e.latlng); areaChanged();
+    /* うっかりタップで中心が動かないよう、ここを中心にするか確かめる */
+    var pop=L.popup({offset:[0,-4],maxWidth:220}).setLatLng(e.latlng).setContent('<div class="pp"><button class="btn sm pri" data-pp="ctr">ここを中心にする</button></div>').openOn(map), pe=pop.getElement();
+    if(pe) pe.querySelector('[data-pp=ctr]').onclick=function(){ map.closePopup(); state.center=ll; ctrMarker.setLatLng(e.latlng); circle.setLatLng(e.latlng); areaChanged(); };
   });
+  var here=L.control({position:"topleft"});
+  here.onAdd=function(){ var b=L.DomUtil.create("button","btn sm maphere"); b.type="button"; b.textContent="◎ 画面の真ん中で探す"; b.title="今見ている地図の真ん中を、円の中心にします";
+    L.DomEvent.disableClickPropagation(b); b.onclick=function(){ var c=map.getCenter(); state.center={lat:c.lat,lng:c.lng}; ctrMarker.setLatLng(c); circle.setLatLng(c); areaChanged(); }; return b; };
+  here.addTo(map);
   var mq=window.matchMedia("(prefers-color-scheme: dark)");
   function restyle(){ circle.setStyle({color:css("--ring"),fillColor:css("--ring")}); }
   if(mq.addEventListener) mq.addEventListener("change",restyle);
@@ -345,6 +351,17 @@ function castBlock(s,c){
 function nearestPlace(ll){var b=null,bd=1e9;PLACES.forEach(function(p){var d=distKm(ll,{lat:p[1],lng:p[2]});if(d<bd){bd=d;b=p;}});return b?{name:b[0],lat:b[1],lng:b[2],dist:bd}:null;}
 
 var lastRanked=[];
+/* ポイントを押したとき:地図の上に小さな案内を出し、「拡大」「詳しく」「釣果を記録」を選べるようにする */
+function spotPopup(s,ll){
+  var r=lastRanked.filter(function(x){return x.spot.id===s.id;})[0], n=lastRanked.indexOf(r)+1;
+  var html='<div class="pp"><b>'+esc(s.name)+'</b>'+(n?'<div class="src">'+n+'位・'+esc(r.kind||"")+(r.why&&r.why[0]?'・'+esc(r.why[0]):'')+'</div>':(s.area?'<div class="src">'+esc(s.area)+'</div>':''))+
+    '<div class="ppb"><button class="btn sm pri" data-pp="zoom">ここを拡大</button> <button class="btn sm" data-pp="info">詳しく</button> <button class="btn sm" data-pp="log">釣果を記録</button></div></div>';
+  var pop=L.popup({offset:[0,-8],autoPanPadding:[20,20],maxWidth:260}).setLatLng(ll||[s.lat,s.lng]).setContent(html).openOn(map);
+  var el=pop.getElement(); if(!el) return;
+  el.querySelector('[data-pp=zoom]').onclick=function(){ map.closePopup(); map.flyTo([s.lat,s.lng],Math.max(map.getZoom()+2,16),{duration:0.6}); };
+  el.querySelector('[data-pp=info]').onclick=function(){ map.closePopup(); var t=document.getElementById("sp-"+s.id); if(t){ t.open=true; var pd=t.parentElement&&t.parentElement.closest("details"); if(pd) pd.open=true; t.scrollIntoView({behavior:"smooth",block:"center"}); } else alertMsg("このポイントの詳しい情報は、円の中に入れると出ます"); };
+  el.querySelector('[data-pp=log]').onclick=function(){ map.closePopup(); openLog(s.id); };
+}
 function drawPins(ranked){
   lastRanked=ranked||[];
   if(!spotLayer)return;
@@ -354,14 +371,14 @@ function drawPins(ranked){
     var n=rankOf[s.id], z=map.getZoom();
     if(!n&&z<11) return;
     if(n>10&&z<12) return;
-    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(e){if(state.castEdit){castTap({lat:e.latlng.lat,lng:e.latlng.lng});return;} var t=document.getElementById("sp-"+s.id);if(t){t.open=true;} if(t)t.scrollIntoView({behavior:"smooth",block:"center"});}); spotLayer.addLayer(dot); return; }
+    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(e){if(state.castEdit){castTap({lat:e.latlng.lat,lng:e.latlng.lng});return;} spotPopup(s);}); spotLayer.addLayer(dot); return; }
     var cls="pin"+(n?(n===1?" top":""):" out")+(s.mine?" mine":"")+(s.auto?" auto":"")+(s.shared?" shared":"");
     var sz=n?(n===1?34:26):12;
     var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="'+cls+'">'+(n||"")+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
     var showName=n&&(n<=3||map.getZoom()>=12);
     var short=s.auto?s.name.replace(/\(.*\)$/,"").replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""):s.name; if(/^の/.test(short)) short=short.slice(1);
     m.bindTooltip(esc(showName?short:s.name),showName?{permanent:true,direction:"right",offset:[sz/2,0],className:"pinlabel"}:{direction:"top",offset:[0,-sz/2]});
-    m.on("click",function(e){if(state.castEdit){castTap({lat:s.lat,lng:s.lng});return;} var t=document.getElementById("sp-"+s.id);if(t){ t.open=true; if(t.parentElement.closest("details"))t.parentElement.closest("details").open=true; t.scrollIntoView({behavior:"smooth",block:"center"});}});
+    m.on("click",function(e){if(state.castEdit){castTap({lat:s.lat,lng:s.lng});return;} spotPopup(s);});
     spotLayer.addLayer(m);
   });
 }
@@ -1003,7 +1020,7 @@ function hint(){
   var h=document.getElementById("hint"), n=inside().length;
   if(state.fixId){ var s=allSpots().filter(function(x){return x.id===state.fixId;})[0]; h.textContent="地図で「"+(s?s.name:"")+"」の正しい位置をタップしてください。"; return; }
   var pl=centerPlace();
-  h.textContent=(state.beachMsg?state.beachMsg+" ":"")+(state.autoMsg?state.autoMsg+" ":"")+(pl?"中心:"+pl.name+"付近。":"")+(state.mode==="add"?"地図で追加したい場所をタップ。":"地図をタップするか中心の点をドラッグして範囲を決めます。")+" 円の中:"+n+"か所";
+  h.textContent=(state.beachMsg?state.beachMsg+" ":"")+(state.autoMsg?state.autoMsg+" ":"")+(pl?"中心:"+pl.name+"付近。":"")+(state.mode==="add"?"地図で追加したい場所をタップ。":"範囲を変えるときは、地図を動かして左上の「画面の真ん中で探す」を押すか、地図をタップして「ここを中心にする」、または中心の点をドラッグします。ポイントを押すと「拡大」「詳しく」が選べます。")+" 円の中:"+n+"か所";
 }
 function showAdd(){ var f=document.getElementById("addForm"); f.hidden=false; document.getElementById("addName").focus(); }
 
