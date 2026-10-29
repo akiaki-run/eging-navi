@@ -266,16 +266,25 @@ function radarLayer(){
       }).catch(function(){ setLbl("雨雲レーダーを読み込めませんでした"); });
     });
   }
-  var shownU="";
-  function pick(){ if(!frames.length||!map||!map.hasLayer(g)) return; var t=mapT(), best=null;
-    frames.forEach(function(f){ if(!best||Math.abs(f.t-t)<Math.abs(best.t-t)) best=f; });
-    var lo=Math.min.apply(null,frames.map(function(f){return f.t;})), hi=Math.max.apply(null,frames.map(function(f){return f.t;}));
-    if(Math.abs(best.t-t)>40*60000){ if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setLbl("雨雲は "+fmtJst(lo).split(" ")[1]+"〜"+fmtJst(hi).split(" ")[1]+" の分だけ見られます(バーを近づけてください)"); return; }
-    if(best.u!==shownU){ var old=tl; tl=L.tileLayer(best.u,{opacity:0.9,className:"radartiles",maxZoom:18,zIndex:5,maxNativeZoom:src==="jma"?10:7,minNativeZoom:src==="jma"?4:0,attribution:src==="jma"?'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>':'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
-      g.addLayer(tl); if(old) setTimeout(function(){ g.removeLayer(old); },400); shownU=best.u; }
+  /* 雨雲の画像は時刻ごとに層を作って取っておき、前後の時刻も先に読み込む。切り替えは見せる層を変えるだけ */
+  var layers={}, order=[], shownU="";
+  function layerFor(f){ if(layers[f.u]) return layers[f.u];
+    var l=L.tileLayer(f.u,{opacity:0,className:"radartiles",maxZoom:18,zIndex:5,maxNativeZoom:src==="jma"?10:7,minNativeZoom:src==="jma"?4:0,updateWhenZooming:false,keepBuffer:3,
+      attribution:src==="jma"?'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>':'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
+    layers[f.u]=l; order.push(f.u); g.addLayer(l);
+    while(order.length>8){ var o=order.shift(); if(o!==shownU&&layers[o]){ g.removeLayer(layers[o]); delete layers[o]; } else order.push(o); if(order.length<=8) break; }
+    return l; }
+  function pick(){ if(!frames.length||!map||!map.hasLayer(g)) return; var t=mapT(), bi=0;
+    frames.sort(function(a,b){return a.t-b.t;}); frames.forEach(function(f,i){ if(Math.abs(f.t-t)<Math.abs(frames[bi].t-t)) bi=i; }); var best=frames[bi];
+    var lo=frames[0].t, hi=frames[frames.length-1].t;
+    if(Math.abs(best.t-t)>40*60000){ Object.keys(layers).forEach(function(u){ layers[u].setOpacity(0); }); shownU=""; setLbl("雨雲は "+fmtJst(lo).split(" ")[1]+"〜"+fmtJst(hi).split(" ")[1]+" の分だけ見られます(バーを近づけてください)"); return; }
+    var cur=layerFor(best); Object.keys(layers).forEach(function(u){ layers[u].setOpacity(u===best.u?0.9:0); }); shownU=best.u;
+    [bi-1,bi+1,bi-2,bi+2].forEach(function(k){ if(frames[k]) layerFor(frames[k]); });
     setLbl("雨雲 "+fmtJst(best.t)+(best.t>Date.now()+5*60000?"(予測)":"")+(src==="jma"?"(気象庁)":"")); }
-  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.getContainer().classList.add("radar-on"); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
-  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.getContainer().classList.remove("radar-on"); lbl.remove(); clearInterval(timer); if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setTimeout(renderMapTime,0); };
+  function dim(on){ map.eachLayer(function(l){ if(l instanceof L.TileLayer&&!(l.options.className||"").match(/radartiles/)){ if(l.options.baseOpacity==null) l.options.baseOpacity=l.options.opacity==null?1:l.options.opacity; l.setOpacity(on?l.options.baseOpacity*0.55:l.options.baseOpacity); } }); }
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); dim(true); m.on("baselayerchange",dimOn); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
+  function dimOn(){ setTimeout(function(){ dim(true); },0); }
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); dim(false); m.off("baselayerchange",dimOn); lbl.remove(); clearInterval(timer); Object.keys(layers).forEach(function(u){ g.removeLayer(layers[u]); }); layers={}; order=[]; shownU=""; setTimeout(renderMapTime,0); };
   mapTime.subs.push(pick); radarRef=g;
   return g;
 }

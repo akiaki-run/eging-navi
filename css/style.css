@@ -227,7 +227,7 @@ body.recOpen{overflow:hidden}
 .maptime .mtrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .maptime input[type=range]{width:100%;margin:6px 0 2px}
 /* 雨雲を見やすく:雨雲を出している間は、下の地図を薄い灰色にする */
-.radar-on .leaflet-tile-pane>.leaflet-layer:not(.radartiles){filter:grayscale(1) brightness(1.08) contrast(.85)}
+
 .radarleg .rscale{display:flex;align-items:center;gap:2px;margin-top:3px;font-size:10px}
 .radarleg .rscale i{display:inline-block;width:12px;height:10px;border-radius:2px}
 .radarleg .rscale small{margin-left:3px;color:var(--sub)}
