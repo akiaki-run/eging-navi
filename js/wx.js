@@ -50,6 +50,7 @@ var Wx=(function(){
   function loadStations(){ if(stations) return Promise.resolve(stations); if(stLoading) return stLoading;
     stLoading=fetchJson("data/tide/stations.json").then(function(s){ stations=s; return s; }).catch(function(){ stLoading=null; return null; }); return stLoading; }
   function nearestStation(ll){ if(!stations) return null; var b=null,bd=1e9; stations.forEach(function(s){ var d=distKm(ll,{lat:s[2],lng:s[3]}); if(d<bd){bd=d;b=s;} }); return b?{code:b[0],name:b[1],lat:b[2],lng:b[3],dist:bd}:null; }
+  function nearStations(ll,n){ if(!stations) return []; return stations.map(function(s){ return {code:s[0],name:s[1],lat:s[2],lng:s[3],dist:distKm(ll,{lat:s[2],lng:s[3]})}; }).sort(function(a,b){return a.dist-b.dist;}).slice(0,n||5); }
   var tideMonths={};
   function tideInfo(code,dateKey){
     var m=tideMonths[code+"/"+dateKey.slice(0,7)]; if(!m) return null;
@@ -112,5 +113,5 @@ var Wx=(function(){
   function sstAt(days,key,hour){ var dd=days&&days[key]; if(!dd||!dd.sst) return null; for(var k=0;k<6;k++){ var v=dd.sst[Math.max(0,Math.min(23,hour-k))]; if(v!=null) return Math.round(v*10)/10; } return null; }
   function rainBefore(lat,lng,key,hour){ return rainSum(cellDays(lat,lng),key,hour); }
   function cellDays(lat,lng){ var c=cellCache[cellKey(lat,lng)]; return c&&c.days?c.days:null; }
-  return {roughBefore:roughBefore,sstAt:sstAt,rainSum:rainSum,rainBefore:rainBefore,tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
+  return {nearStations:nearStations,roughBefore:roughBefore,sstAt:sstAt,rainSum:rainSum,rainBefore:rainBefore,tideInfo:tideInfo,forecastCells:forecastCells,cellDays:cellDays,forecast:forecast,summarize:summarize,loadStations:loadStations,nearestStation:nearestStation,tideDay:tideDay};
 })();

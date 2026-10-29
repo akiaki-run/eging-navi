@@ -1193,13 +1193,30 @@ document.getElementById("lgCancel").onclick=closeLog;
 var cal={y:0,m:0,sel:null,at:null};
 function openCal(spot){ var D=jstDate(0); cal.y=D.y; cal.m=D.m; cal.sel=jstDate(state.offset).key;
   cal.at=spot&&spot.lat!=null?{lat:spot.lat,lng:spot.lng,name:spot.name}:{lat:state.center.lat,lng:state.center.lng,name:null};
-  document.getElementById("calTitle").textContent="潮カレンダー"+(cal.at.name?":"+cal.at.name:""); document.getElementById("calView").hidden=false; document.body.classList.add("recOpen"); drawCal(); }
+  document.getElementById("calTitle").textContent="潮カレンダー"; calOptions(); document.getElementById("calView").hidden=false; document.body.classList.add("recOpen"); drawCal(); }
+/* 場所の選び方:地図の中心・おすすめ上位のポイント・近い観測地点。探す欄では港の名前や地名で探せる */
+var calOpts=[];
+function calOptions(){
+  Wx.loadStations().then(function(){
+    var o=[{name:"地図の中心",lat:state.center.lat,lng:state.center.lng,c:true}];
+    lastRanked.slice(0,10).forEach(function(r,i){ o.push({name:(i+1)+"位 "+r.spot.name,lat:r.spot.lat,lng:r.spot.lng}); });
+    if(cal.at&&cal.at.name&&!o.some(function(x){return x.name.replace(/^\d+位 /,"")===cal.at.name;})) o.splice(1,0,{name:cal.at.name,lat:cal.at.lat,lng:cal.at.lng});
+    var st=(window.WxStations||[]); var near=Wx.nearStations?Wx.nearStations(cal.at||state.center,8):[];
+    near.forEach(function(x){ o.push({name:"観測地点 "+x.name+"(約"+Math.round(x.dist)+"km)",lat:x.lat,lng:x.lng,st:x.name}); });
+    calOpts=o; var sel=document.getElementById("calPlace");
+    sel.innerHTML=o.map(function(x,i){ return '<option value="'+i+'">'+esc(x.name)+'</option>'; }).join("");
+    var cur=o.findIndex(function(x){ return cal.at&&Math.abs(x.lat-cal.at.lat)<1e-6&&Math.abs(x.lng-cal.at.lng)<1e-6; }); sel.value=String(cur<0?0:cur);
+  });
+}
+function calSetPlace(x){ cal.at={lat:x.lat,lng:x.lng,name:x.c?null:(x.st?"観測地点 "+x.st:x.name.replace(/^\d+位 /,"")),station:!!x.st}; drawCal(); calOptions(); }
+function calSearch(){ var q=document.getElementById("calQ").value.trim(); if(!q) return; document.getElementById("calSt").textContent="探しています…";
+  findPlace(q).then(function(p){ if(!p){ document.getElementById("calSt").textContent="「"+q+"」が見つかりませんでした"; return; } calSetPlace({name:p.match?p.match.replace(/\(.*$/,""):q,lat:p.lat,lng:p.lng}); }); }
 function closeCal(){ document.getElementById("calView").hidden=true; document.body.classList.remove("recOpen"); }
 function drawCal(){
   var ym=cal.y+"-"+String(cal.m).padStart(2,"0"); document.getElementById("calMonth").textContent=cal.y+"年"+cal.m+"月";
   var grid=document.getElementById("calGrid"), stEl=document.getElementById("calSt");
   Wx.loadStations().then(function(){ var st=Wx.nearestStation(cal.at);
-    stEl.textContent=st?"観測地点:"+st.name+"("+(cal.at.name?cal.at.name:"地図の中心")+"から約"+Math.round(st.dist)+"km)。潮の時刻と高さは、いちばん近い観測地点のものです":"潮位表を読み込めませんでした(潮名だけ出します)";
+    stEl.textContent=st&&cal.at.station?"観測地点:"+st.name+"の潮です":st?"観測地点:"+st.name+"("+(cal.at.name?cal.at.name:"地図の中心")+"から約"+Math.round(st.dist)+"km)。潮の時刻と高さは、いちばん近い観測地点のものです":"潮位表を読み込めませんでした(潮名だけ出します)";
     var p=st?Wx.tideDay(st.code,ym+"-01").catch(function(){return null;}):Promise.resolve(null);
     p.then(function(){ var first=new Date(Date.UTC(cal.y,cal.m-1,1)), nd=new Date(Date.UTC(cal.y,cal.m,0)).getUTCDate(), today=jstDate(0).key;
       var h=["日","月","火","水","木","金","土"].map(function(w,i){ return '<div class="wd'+(i===0?" sun":(i===6?" sat":""))+'">'+w+'</div>'; }).join("");
@@ -1231,6 +1248,8 @@ function dayLabel(off){ if(off===0) return "今日"; if(off===1) return "明日"
 (function(){ var sel=document.getElementById("dMore"), h='<option value="">その先の日</option>'; for(var i=2;i<=MAXDAY;i++) h+='<option value="'+i+'">'+dayLabel(i)+'</option>'; sel.innerHTML=h;
   sel.onchange=function(){ if(!sel.value) return; state.offset=+sel.value; state.manual=null; render(); loadConditions(); }; })();
 document.getElementById("calOpen").onclick=function(){ openCal(null); }; document.getElementById("calClose").onclick=closeCal;
+document.getElementById("calPlace").onchange=function(){ var x=calOpts[+this.value]; if(x) calSetPlace(x); };
+document.getElementById("calQGo").onclick=calSearch; document.getElementById("calQ").onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); calSearch(); } };
 document.getElementById("calPrev").onclick=function(){ cal.m--; if(cal.m<1){ cal.m=12; cal.y--; } drawCal(); };
 document.getElementById("calNext").onclick=function(){ cal.m++; if(cal.m>12){ cal.m=1; cal.y++; } drawCal(); };
 document.getElementById("d0").onclick=function(){state.offset=0;state.manual=null;render();loadConditions();};

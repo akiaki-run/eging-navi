@@ -256,3 +256,6 @@ body.recOpen{overflow:hidden}
 .calday{margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:.9rem}
 .calday:empty{display:none}
 .calsvg{margin:6px 0}.calsvg svg{width:100%;height:auto;display:block}
+.calpick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0}
+.calpick label{font-size:.85rem;color:var(--sub);display:flex;gap:4px;align-items:center}
+.calpick select,.calpick input{font:inherit;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);max-width:62vw}

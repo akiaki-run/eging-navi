@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261029u">
+<link rel="stylesheet" href="css/style.css?v=20261029v">
 </head>
 <body>
 <div class="wrap">
@@ -139,6 +139,8 @@
   <div class="recIn">
     <div class="recHead"><button class="btn" type="button" id="calClose">← 地図に戻る</button><h2 id="calTitle">潮カレンダー</h2></div>
     <div class="calnav"><button class="btn sm" type="button" id="calPrev">◀ 前の月</button><b id="calMonth"></b><button class="btn sm" type="button" id="calNext">次の月 ▶</button></div>
+    <div class="calpick"><label>場所<select id="calPlace"></select></label>
+      <span><input id="calQ" maxlength="40" placeholder="港の名前・地名で探す"> <button class="btn sm" type="button" id="calQGo">探す</button></span></div>
     <div class="src" id="calSt"></div>
     <div id="calGrid" class="calgrid"></div>
     <div id="calDay" class="calday"></div>
@@ -204,10 +206,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261029u"></script>
-<script src="js/engine.js?v=20261029u"></script>
-<script src="js/wx.js?v=20261029u"></script>
-<script src="js/store.js?v=20261029u"></script>
-<script src="js/app.js?v=20261029u"></script>
+<script src="firebase-config.js?v=20261029v"></script>
+<script src="js/engine.js?v=20261029v"></script>
+<script src="js/wx.js?v=20261029v"></script>
+<script src="js/store.js?v=20261029v"></script>
+<script src="js/app.js?v=20261029v"></script>
 </body>
 </html>
