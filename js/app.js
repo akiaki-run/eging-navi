@@ -42,8 +42,10 @@ function allSpots(){
 function radius(){return state.dia/2;}
 function inside(){var c=state.center,r=radius();return allSpots().filter(function(s){return distKm(c,s)<=r;});}
 
-var SLOTS=[["auto","次のマヅメ"],["morning","朝マヅメ"],["day","日中"],["evening","夕マヅメ"],["night","夜"]];
+var SLOTS=[["auto","次のマヅメ"],["morning","朝マヅメ"],["day","日中"],["evening","夕マヅメ"],["night","夜"],["custom","時間を指定"]];
+function slotKey(){ return state.slot+(state.slot==="custom"?"("+state.cFrom+"-"+state.cTo+")":""); }
 function slotRange(slot,sr,ss){
+  if(slot==="custom"){ var f=state.cFrom===""||state.cFrom==null?(state.offset===0?Math.max(0,Math.floor(nowH()*2)/2):0):+state.cFrom, t=state.cTo===""||state.cTo==null?24:+state.cTo; if(t<=f) t=Math.min(24,f+1); return [f,t,"custom"]; }
   if(slot==="auto"){ if(state.offset===0){ var n=nowH(); slot=n<sr+1?"morning":(n<ss+1?"evening":"night"); } else slot="evening"; }
   if(slot==="morning") return [sr-1,sr+2,slot]; if(slot==="day") return [10,15,slot]; if(slot==="evening") return [ss-2,ss+1,slot]; return [ss+1.5,23,slot];
 }
@@ -101,7 +103,7 @@ function baseCond(){
 /* ポイントごとの条件:風・波・雨(約5kmのマス目)、潮(いちばん近い観測地点)、日の出入り(その場所) */
 var condMemo={};
 function spotCond(c,s,from,to,key){
-  var mk=key+"|"+state.slot+"|"+s.lat+","+s.lng+"|"+(state.wxVer||0)+"|"+learnMemo.k;
+  var mk=key+"|"+slotKey()+"|"+s.lat+","+s.lng+"|"+(state.wxVer||0)+"|"+learnMemo.k;
   if(condMemo[mk]) return condMemo[mk];
   var o=Object.assign({},c); delete o.condFor; o.perSpot=[];
   var D=jstDate(state.offset), st=sunTimes(D.y,D.m,D.d,s.lat,s.lng); o.sunrise=st.rise; o.sunset=st.set;
@@ -166,34 +168,54 @@ function loadView(){
   if(codes.length<=8) codes.forEach(loadPref);
 }
 
+/* ===== 地図の時刻(雨雲・風の矢印で使う)。バーで動かす。動かしていなければ選んだ日・時間帯に合わせる ===== */
+var mapTime={t:null,follow:true,subs:[]};
+function slotMidTime(){ var D=jstDate(state.offset), c=baseCond(), h=(c.slotFrom!=null&&c.slotTo!=null)?(c.slotFrom+c.slotTo)/2:(state.offset?12:nowH());
+  h=Math.max(0,Math.min(23.5,h)); return Date.UTC(D.y,D.m-1,D.d,0,0)-9*36e5+Math.round(h)*36e5; }
+function mapT(){ return mapTime.follow||mapTime.t==null?slotMidTime():mapTime.t; }
+function jstKH(ms){ var d=new Date(ms+9*36e5); return {key:d.toISOString().slice(0,10),h:d.getUTCHours(),m:d.getUTCMinutes()}; }
+function fmtJst(ms){ var d=new Date(ms+9*36e5); return (d.getUTCMonth()+1)+"/"+d.getUTCDate()+"("+"日月火水木金土"[d.getUTCDay()]+") "+String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0"); }
+function mapTimeChanged(){ mapTime.subs.forEach(function(f){ try{ f(); }catch(e){ console.warn(e); } }); renderMapTime(); }
+function renderMapTime(){ var box=document.getElementById("mapTime"); if(!box) return; var on=map&&(map.hasLayer(radarRef||{})||map.hasLayer(window.windLayerRef||{}));
+  box.hidden=!on; if(!on) return; var now=Math.floor(Date.now()/36e5)*36e5, t=mapT(), r=document.getElementById("mtRange");
+  r.min=-3; r.max=47; r.value=Math.round((t-now)/36e5);
+  document.getElementById("mtLabel").textContent=(Math.abs(t-Date.now())<36e5*0.5?"今 ":"")+fmtJst(t)+(mapTime.follow?"(選んだ時間帯)":""); }
+var radarRef=null;
 /* ===== 雨雲レーダー:気象庁の降水ナウキャスト(高解像度)。取れなければ RainViewer ===== */
 var radarInfo=null;
 function radarLayer(){
-  var g=L.layerGroup(), tl=null, timer=null, lbl=L.control({position:"bottomright"});
+  var g=L.layerGroup(), tl=null, timer=null, frames=[], src="", lbl=L.control({position:"bottomright"});
   lbl.onAdd=function(){ var d=L.DomUtil.create("div","maplegend"); d.id="radarTime"; return d; };
   function setLbl(t){ var el=document.getElementById("radarTime"); if(el) el.textContent=t; }
+  function jt(v){ return Date.UTC(+v.slice(0,4),+v.slice(4,6)-1,+v.slice(6,8),+v.slice(8,10),+v.slice(10,12)); }
   function load(){
-    fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json").then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(a){
-      var t=a.filter(function(x){ return (x.elements||[]).indexOf("hrpns")>=0; }).sort(function(x,y){ return x.validtime<y.validtime?1:-1; })[0]||a[0];
-      var u="https://www.jma.go.jp/bosai/jmatile/data/nowc/"+t.basetime+"/none/"+t.validtime+"/surf/hrpns/{z}/{x}/{y}.png";
-      show(u,{maxNativeZoom:10,minNativeZoom:4,attribution:'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>'});
-      var v=t.validtime, h=(+v.slice(8,10)+9)%24; setLbl("雨雲 "+String(h).padStart(2,"0")+":"+v.slice(10,12)+" 時点(気象庁)");
-    }).catch(function(){
-      fetch("https://api.rainviewer.com/public/weather-maps.json").then(function(r){ return r.json(); }).then(function(j){
-        var f=j.radar.past[j.radar.past.length-1]; show(j.host+f.path+"/256/{z}/{x}/{y}/2/1_1.png",{maxNativeZoom:7,attribution:'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
-        var d=new Date(f.time*1000+9*36e5); setLbl("雨雲 "+String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0")+" 時点");
+    var j1=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json").then(function(r){ if(!r.ok) throw 0; return r.json(); });
+    var j2=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json").then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; });
+    Promise.all([j1,j2]).then(function(a){ src="jma";
+      frames=a[0].concat(a[1]).filter(function(x){ return !x.elements||x.elements.indexOf("hrpns")>=0; }).map(function(x){ return {t:jt(x.validtime),u:"https://www.jma.go.jp/bosai/jmatile/data/nowc/"+x.basetime+"/none/"+x.validtime+"/surf/hrpns/{z}/{x}/{y}.png"}; });
+      pick(); }).catch(function(){
+      fetch("https://api.rainviewer.com/public/weather-maps.json").then(function(r){ return r.json(); }).then(function(j){ src="rv";
+        frames=j.radar.past.concat(j.radar.nowcast||[]).map(function(f){ return {t:f.time*1000,u:j.host+f.path+"/256/{z}/{x}/{y}/2/1_1.png"}; }); pick();
       }).catch(function(){ setLbl("雨雲レーダーを読み込めませんでした"); });
     });
   }
-  function show(u,o){ if(tl) g.removeLayer(tl); tl=L.tileLayer(u,Object.assign({opacity:0.6,maxZoom:18,zIndex:5},o)); g.addLayer(tl); }
-  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); lbl.addTo(m); load(); timer=setInterval(load,5*60000); };
-  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); lbl.remove(); clearInterval(timer); };
+  var shownU="";
+  function pick(){ if(!frames.length||!map||!map.hasLayer(g)) return; var t=mapT(), best=null;
+    frames.forEach(function(f){ if(!best||Math.abs(f.t-t)<Math.abs(best.t-t)) best=f; });
+    var lo=Math.min.apply(null,frames.map(function(f){return f.t;})), hi=Math.max.apply(null,frames.map(function(f){return f.t;}));
+    if(Math.abs(best.t-t)>40*60000){ if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setLbl("雨雲は "+fmtJst(lo).split(" ")[1]+"〜"+fmtJst(hi).split(" ")[1]+" の分だけ見られます(バーを近づけてください)"); return; }
+    if(best.u!==shownU){ var old=tl; tl=L.tileLayer(best.u,{opacity:0.6,maxZoom:18,zIndex:5,maxNativeZoom:src==="jma"?10:7,minNativeZoom:src==="jma"?4:0,attribution:src==="jma"?'<a href="https://www.jma.go.jp/bosai/nowc/" target="_blank" rel="noopener">気象庁 降水ナウキャスト</a>':'<a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>'});
+      g.addLayer(tl); if(old) setTimeout(function(){ g.removeLayer(old); },400); shownU=best.u; }
+    setLbl("雨雲 "+fmtJst(best.t)+(best.t>Date.now()+5*60000?"(予測)":"")+(src==="jma"?"(気象庁)":"")); }
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); lbl.remove(); clearInterval(timer); if(tl){ g.removeLayer(tl); tl=null; shownU=""; } setTimeout(renderMapTime,0); };
+  mapTime.subs.push(pick); radarRef=g;
   return g;
 }
 /* ===== 風の矢印:見ている範囲を格子に分け、選んだ日・時間帯の風を Open-Meteo から取って描く ===== */
 function windLayer(){
   var g=L.layerGroup(), seq=0;
-  function hourNow(){ var D=jstDate(state.offset), c=baseCond(); var h=(c.slotFrom!=null&&c.slotTo!=null)?Math.round((c.slotFrom+c.slotTo)/2):(state.offset?12:new Date(Date.now()+9*36e5).getUTCHours()); return {key:D.key,h:Math.max(0,Math.min(23,h))}; }
+  function hourNow(){ return jstKH(mapT()); }
   function color(ws){ return ws<3?"#2e7d32":(ws<6?"#e0a100":(ws<10?"#e65100":"#c62828")); }
   function draw(){
     if(!map||!map.hasLayer(g)) return; var my=++seq, b=map.getBounds(), n=map.getSize().x<500?5:7, pts=[];
@@ -207,8 +229,9 @@ function windLayer(){
   }
   var t=null; function later(){ clearTimeout(t); t=setTimeout(draw,400); }
   function leg(on){ var e=document.getElementById("windLeg"); if(e) e.hidden=!on; }
-  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.on("moveend",later); draw(); setTimeout(function(){leg(true);},0); };
-  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.off("moveend",later); leg(false); };
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.on("moveend",later); draw(); setTimeout(function(){leg(true); renderMapTime();},0); };
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.off("moveend",later); leg(false); setTimeout(renderMapTime,0); };
+  mapTime.subs.push(function(){ lastT=""; g.redraw(); });
   var lastT=""; g.redraw=function(){ if(!map||!map.hasLayer(g)) return; var t=hourNow(), k=t.key+"|"+t.h; if(k!==lastT){ lastT=k; later(); } }; window.windLayerRef=g;
   return g;
 }
@@ -974,7 +997,7 @@ function setMode(m){
   if(m!=="add"){ document.getElementById("addForm").hidden=true; state.addAt=null; }
   hint();
 }
-var SLOT_NAME={morning:"朝マヅメ",day:"日中",evening:"夕マヅメ",night:"夜"};
+var SLOT_NAME={morning:"朝マヅメ",day:"日中",evening:"夕マヅメ",night:"夜",custom:"指定した時間"};
 function fmtTime(d){ if(!d) return ""; var j=new Date(d.getTime()+9*36e5); return String(j.getUTCHours()).padStart(2,"0")+":"+String(j.getUTCMinutes()).padStart(2,"0"); }
 function hint(){
   var h=document.getElementById("hint"), n=inside().length;
@@ -985,8 +1008,9 @@ function hint(){
 function showAdd(){ var f=document.getElementById("addForm"); f.hidden=false; document.getElementById("addName").focus(); }
 
 function render(){
-  if(state._memoKey!==state.slot+'|'+state.offset+'|'+JSON.stringify(state.manual)){ condMemo={}; state._memoKey=state.slot+'|'+state.offset+'|'+JSON.stringify(state.manual); }
+  if(state._memoKey!==slotKey()+'|'+state.offset+'|'+JSON.stringify(state.manual)){ condMemo={}; state._memoKey=slotKey()+'|'+state.offset+'|'+JSON.stringify(state.manual); }
   var c=baseCond(), D=jstDate(state.offset);
+  var mk2=state.offset+"|"+slotKey(); if(mapTime.k!==mk2){ mapTime.k=mk2; mapTime.follow=true; mapTimeChanged(); }
   if(window.windLayerRef) windLayerRef.redraw();
   document.getElementById("d0").setAttribute("aria-pressed",state.offset===0);
   document.getElementById("d1").setAttribute("aria-pressed",state.offset===1);
@@ -1016,7 +1040,7 @@ function render(){
     drawTide(c,null,[]); renderSpots(ranked,c); renderLog(); return;
   }
   var moreEl=document.querySelector('#pick details.more'), moreOpen=moreEl?moreEl.open:null;
-  var top=ranked[0], ct=c.condFor?c.condFor(top.spot):c, wins=bestWindows(ct,top.spot,state.offset===0?nowH():0);
+  var top=ranked[0], ct=c.condFor?c.condFor(top.spot):c, wins=bestWindows(ct,top.spot,Math.max(state.offset===0?nowH():0,state.slot==="custom"?c.slotFrom:0),state.slot==="custom"?c.slotTo:24);
   var winHtml=wins.length?wins.map(function(w){return '<span class="chip'+(/マヅメ/.test(w.label)?' dusk':'')+'"><b class="num">'+h2hm(w.s)+'〜'+h2hm(w.e)+'</b>'+esc(w.label)+'</span>';}).join(""):'<span class="chip">今日はもう遅い時間です。明日を見てください</span>';
   pick.innerHTML='<div class="eyebrow">'+(state.offset===0?"今日":"明日")+'の一押し</div>'+
     '<div class="name">'+esc(top.spot.name)+'</div>'+
@@ -1283,7 +1307,14 @@ function renderAuth0(){
 (function(){
   var el=document.getElementById("slots");
   el.innerHTML=SLOTS.map(function(s){ return '<button data-slot="'+s[0]+'" aria-pressed="'+(s[0]===state.slot)+'">'+s[1]+'</button>'; }).join("");
-  Array.prototype.forEach.call(el.querySelectorAll("button"),function(b){ b.onclick=function(){ state.slot=b.dataset.slot;
+  var cs=document.getElementById("customSlot"), opts='<option value="">指定なし</option>';
+  for(var h=0;h<=24;h+=0.5) opts+='<option value="'+h+'">'+h2hm(h)+'</option>';
+  document.getElementById("cFrom").innerHTML=opts; document.getElementById("cTo").innerHTML=opts;
+  state.cFrom=lsGet("eging-cfrom")||""; state.cTo=lsGet("eging-cto")||""; document.getElementById("cFrom").value=state.cFrom; document.getElementById("cTo").value=state.cTo;
+  cs.hidden=state.slot!=="custom";
+  document.getElementById("cFrom").onchange=function(){ state.cFrom=this.value; lsSet("eging-cfrom",state.cFrom); render(); };
+  document.getElementById("cTo").onchange=function(){ state.cTo=this.value; lsSet("eging-cto",state.cTo); render(); };
+  Array.prototype.forEach.call(el.querySelectorAll("button"),function(b){ b.onclick=function(){ state.slot=b.dataset.slot; cs.hidden=state.slot!=="custom";
     Array.prototype.forEach.call(el.querySelectorAll("button"),function(x){ x.setAttribute("aria-pressed",x===b); }); render(); }; });
 })();
 
@@ -1337,6 +1368,10 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
     var ids={}; state.mine.forEach(function(s){ids[s.id]=1;}); state.auto=state.auto.filter(function(s){return !ids[s.id];}); render(); });
   var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=curLogSpot(); if(!s){ document.getElementById("lgMsg").textContent="先に場所を選んでください。"; return; } document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
   document.getElementById("pastBtn").onclick=openPast;
+  (function(){ var r=document.getElementById("mtRange"), tt=null;
+    r.oninput=function(){ var now=Math.floor(Date.now()/36e5)*36e5; mapTime.t=now+(+r.value)*36e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,250); };
+    document.getElementById("mtNow").onclick=function(){ mapTime.t=Date.now(); mapTime.follow=false; mapTimeChanged(); };
+    document.getElementById("mtSlot").onclick=function(){ mapTime.follow=true; mapTimeChanged(); }; })();
   document.getElementById("pastBtn2").onclick=openPast;
   document.getElementById("recOpen").onclick=function(){ recView(true); };
   document.getElementById("recClose").onclick=function(){ recView(false); };

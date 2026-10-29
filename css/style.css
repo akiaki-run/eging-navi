@@ -220,3 +220,9 @@ body.recOpen{overflow:hidden}
 .maplegend .pin.lg1{width:16px!important;height:16px!important;font-size:9px!important;border-width:1.5px;flex:none;font-style:normal}
 .windarrow{position:relative;width:34px;height:34px;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
 .windarrow b{position:absolute;right:-6px;bottom:-4px;font:700 11px/1 var(--f-num,system-ui);text-shadow:0 0 2px #fff,0 0 2px #fff}
+.customslot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.customslot label{font-size:.85rem;color:var(--sub);display:flex;gap:4px;align-items:center}
+.customslot select{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}
+.maptime{margin:6px 0 2px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.maptime .mtrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.maptime input[type=range]{width:100%;margin:6px 0 2px}

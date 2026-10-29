@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261029m">
+<link rel="stylesheet" href="css/style.css?v=20261029n">
 </head>
 <body>
 <div class="wrap">
@@ -41,6 +41,8 @@
   </form>
   <div class="qres" id="qres" hidden></div>
   <div id="map" role="application" aria-label="範囲を決める地図"></div>
+  <div class="maptime" id="mapTime" hidden><div class="mtrow"><b id="mtLabel"></b> <button class="btn sm" type="button" id="mtNow">今</button> <button class="btn sm" type="button" id="mtSlot">選んだ時間帯</button></div>
+    <input type="range" id="mtRange" min="-3" max="47" step="1" aria-label="雨雲と風の矢印の時刻"><div class="src">雨雲は少し前〜1時間先まで、風の矢印は2日先まで見られます</div></div>
   <div class="ctrls">
     <label for="dia">範囲の直径
       <input type="range" id="dia" min="2" max="100" step="1" value="20"></label>
@@ -62,6 +64,7 @@
 
 <section>
   <div class="seg slots" id="slots" role="group" aria-label="釣りに行く時間帯"></div>
+  <div class="customslot" id="customSlot" hidden><label>何時から<select id="cFrom"></select></label> <label>何時まで<select id="cTo"></select></label> <span class="src">片方だけでも指定できます(「指定なし」は今から/その日の終わりまで)</span></div>
   <div class="strip" id="strip"></div>
   <div class="src" id="src"></div>
 </section>
@@ -189,10 +192,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261029m"></script>
-<script src="js/engine.js?v=20261029m"></script>
-<script src="js/wx.js?v=20261029m"></script>
-<script src="js/store.js?v=20261029m"></script>
-<script src="js/app.js?v=20261029m"></script>
+<script src="firebase-config.js?v=20261029n"></script>
+<script src="js/engine.js?v=20261029n"></script>
+<script src="js/wx.js?v=20261029n"></script>
+<script src="js/store.js?v=20261029n"></script>
+<script src="js/app.js?v=20261029n"></script>
 </body>
 </html>

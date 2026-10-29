@@ -301,8 +301,8 @@ function hourlyScore(c,spot){
   }
   return arr;
 }
-function bestWindows(c,spot,fromH){
-  var arr=hourlyScore(c,spot).filter(function(p){return p.h>=(fromH||0);});
+function bestWindows(c,spot,fromH,toH){
+  var arr=hourlyScore(c,spot).filter(function(p){return p.h>=(fromH||0)&&p.h<=(toH==null?24:toH);});
   if(!arr.length)return [];
   var mx=Math.max.apply(null,arr.map(function(p){return p.v;})), th=mx*0.72, wins=[], cur=null;
   arr.forEach(function(p){
