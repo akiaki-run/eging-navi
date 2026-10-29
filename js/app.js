@@ -547,7 +547,7 @@ function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filt
 function openPast(){
   logFree={picked:null}; logSpotId=null; photoWarn();
   document.getElementById("logSpot").textContent="(過去の釣果)";
-  placeShow(""); document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。";
+  placeShow(""); document.getElementById("lgPlaceRes").textContent="港の名前や県・市を入れて「探す」。または入れてから「地図でタップして選ぶ」を押すと、そのあたりの地図が開きます。";
   var y=new Date(Date.now()+9*36e5-864e5); document.getElementById("lgAt").value=y.toISOString().slice(0,11)+"18:00";
   document.getElementById("lgDir").value=""; document.getElementById("lgWater").value="";
   document.getElementById("lgMethod").value=state.method;
@@ -558,7 +558,7 @@ function openPast(){
 function placeShow(name){ var i=document.getElementById("lgPlace"), has=!!name; i.value=name||""; i.readOnly=has; document.getElementById("lgPlaceEdit").hidden=has; document.getElementById("lgPlaceFix").hidden=!has; }
 function placeFix(){ if(!logFree){ var s=curLogSpot(); logFree={picked:s?{id:s.id,name:s.name,lat:s.lat,lng:s.lng}:null}; logSpotId=null; }
   var i=document.getElementById("lgPlace"); i.readOnly=false; document.getElementById("lgPlaceEdit").hidden=false; document.getElementById("lgPlaceFix").hidden=true; i.select(); i.focus();
-  document.getElementById("lgPlaceRes").textContent="場所を入れて「探す」を押すか、地図でタップしてください。"; }
+  document.getElementById("lgPlaceRes").textContent="港の名前や県・市を入れて「探す」。または入れてから「地図でタップして選ぶ」を押すと、そのあたりの地図が開きます。"; }
 function setPicked(p){
   var id=p.id||(p.known?"port_"+normPlace(p.match||p.name):"imp_"+normPlace(p.name).replace(/[^\w\u3040-\u9fff]/g,""));
   logFree.picked={id:id,name:(p.known&&p.match?p.match.replace(/\(.*$/,""):p.name),lat:p.lat,lng:p.lng,newSpot:!p.id&&!p.known};
@@ -1291,7 +1291,21 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("lgPlaceGo").onclick=searchPlace;
   document.getElementById("lgPlaceFix").onclick=placeFix;
   document.getElementById("lgPlace").onkeydown=function(e){ if(e.key==="Enter"){ e.preventDefault(); searchPlace(); } };
-  document.getElementById("lgPlaceMap").onclick=function(){ document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place"}; document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"}); alertMsg("釣った場所を地図でタップしてください",15000); };
+  document.getElementById("lgPlaceMap").onclick=function(){
+    var q=document.getElementById("lgPlace").value.trim(), ro=document.getElementById("lgPlace").readOnly, pk=logFree&&logFree.picked;
+    function open(ll,z){ document.getElementById("logSheet").hidden=true; state.castEdit={phase:"place"};
+      if(ll) map.setView([ll.lat,ll.lng],z||14); document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"});
+      alertMsg("釣った場所を地図でタップしてください"+(ll?"(入れた場所のあたりを出しています)":"。場所の欄に県や市、港の名前を入れてから押すと、そのあたりの地図が出ます"),15000); }
+    if(!q||ro){ open(pk?{lat:pk.lat,lng:pk.lng}:null,16); return; }
+    /* 入れた名前(県・市・町・港)のあたりへ地図を動かしてからタップしてもらう */
+    var w=normPlace(q), hit=placeCands().filter(function(x){ return normPlace(x.name)===w; }).sort(function(a,b){ return distKm(state.center,a)-distKm(state.center,b); })[0];
+    if(hit){ open(hit,15); return; }
+    document.getElementById("lgPlaceRes").textContent="「"+q+"」の場所を探しています…";
+    fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q="+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(j){
+      if(!j||!j.length){ document.getElementById("lgPlaceRes").textContent="「"+q+"」が見つかりませんでした。県や市の名前で試してください。"; return; }
+      var f=j[0], ll={lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0]}, t=f.properties.title||"", z=/[都道府県]$/.test(q)?10:(/[市郡]$/.test(q)?12:14);
+      open(ll,z); }).catch(function(){ open(null); });
+  };
   var ib=document.getElementById("impBtn"); if(ib) ib.onclick=importRecords;
   Store.on("catches",function(list){ state.catches=list.slice().sort(function(a,b){return (b.at||"")>(a.at||"")?1:-1;}); render(); renderTripBar(); });
   Store.on("pos",function(p){ state.pos=p||{}; render(); });
