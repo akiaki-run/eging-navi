@@ -11,8 +11,8 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==" crossorigin="anonymous">
-<link rel="stylesheet" href="css/style.css?v=20261029w">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="css/style.css?v=20261030g">
 </head>
 <body>
 <div class="wrap">
@@ -151,6 +151,9 @@
   <div class="recIn">
     <div class="recHead"><button class="btn" type="button" id="recClose">← 地図に戻る</button><h2 id="recTitle">釣果の記録</h2></div>
     <div style="margin:8px 0"><button class="btn pri" type="button" id="pastBtn2">＋ 過去の釣果を入れる</button> <span class="src">日時・場所・魚を欄に入れるだけ。その日の風・波・水温・潮は自動で付きます。</span></div>
+    <div class="poolbox"><label><input type="checkbox" id="poolOn"> みんなの学習に参加する</label>
+      <div class="src">オンにすると、このサイトを使う人どうしで「釣行1回ごとの条件と結果」を出し合い、自動調整に使います。出すのは、釣り方・釣れた魚・条件の区分(雨・潮の大きさ・潮の上げ下げ・風・波・気圧の変化・時間帯・月明かり・地形の種類・水温とその変化・時化・季節・平日か土日か)、何月か、釣れた数と釣った時間、場所の開け具合(湾内か外海か)、だいたいの地域(約50km四方のどこか)だけです。正確な場所・日時・写真・メモは出しません。風とその場所の関係(風裏か正面か)・川の近さ・投げた先(港内か外海か)の区分は出します。近い地域の記録ほど重く数えます。オフにすると、出した分は消えます。ログインしているときだけ使えます。</div></div>
+    <div id="poolSum"></div>
     <div id="recSpots" class="src"></div>
     <h3 style="margin:14px 0 4px">釣行(釣り開始〜終了)</h3>
     <div id="tripList"></div>
@@ -196,6 +199,7 @@
       <div class="wide">写真 <label class="btn sm" style="display:inline-block">📷 撮る<input type="file" id="lgCam" accept="image/*" capture="environment" hidden></label>
         <label class="btn sm" style="display:inline-block">写真を選ぶ<input type="file" id="lgPick" accept="image/*" hidden></label> <span class="src" id="lgPhotoMsg"></span>
         <div class="warn" id="lgPhotoWarn" hidden>ログインしていないので、写真はこの端末の中にだけ保存されます。あとでログインして「この端末の記録をアカウントへ移す」を押しても、写真は移りません。スマホとPCの両方で見たいときは、先に右上の「Googleでログイン」をしてください。</div>
+        <div><a class="btn sm" id="lgPhotoSave" hidden>📥 元の写真をこのスマホに保存</a></div>
         <div><img id="lgPhotoPrev" alt="" hidden style="max-width:160px;max-height:120px;border-radius:8px;margin-top:4px"></div></div>
       <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
@@ -205,11 +209,11 @@
 </div>
 
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==" crossorigin="anonymous"></script>
-<script src="firebase-config.js?v=20261029w"></script>
-<script src="js/engine.js?v=20261029w"></script>
-<script src="js/wx.js?v=20261029w"></script>
-<script src="js/store.js?v=20261029w"></script>
-<script src="js/app.js?v=20261029w"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="firebase-config.js?v=20261030g"></script>
+<script src="js/engine.js?v=20261030g"></script>
+<script src="js/wx.js?v=20261030g"></script>
+<script src="js/store.js?v=20261030g"></script>
+<script src="js/app.js?v=20261030g"></script>
 </body>
 </html>

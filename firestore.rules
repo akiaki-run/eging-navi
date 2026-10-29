@@ -16,6 +16,19 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
+    // みんなの学習:釣行1回分の「釣り方・釣れた魚・条件の区分・水温・月・だいたいの地域(約50km四方)」だけ(正確な場所・日時・写真・メモは入れない)。
+    // ログインした人は読める。書けるのは自分の分だけ。
+    match /pool/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && id.matches(request.auth.uid + '_.*')
+                            && request.resource.data.u == request.auth.uid
+                            && request.resource.data.keys().hasOnly(['u','m','f','fc','hr','b','s','mo','ga','go'])
+                            && request.resource.data.f is list && request.resource.data.f.size() <= 10
+                            && request.resource.data.b is map && request.resource.data.b.size() <= 30
+                            && request.resource.data.fc is map && request.resource.data.fc.size() <= 10;
+      allow delete: if signedIn() && resource.data.u == request.auth.uid;
+    }
+
     // 仲間グループ:コードを知っている人だけが参加でき、参加者だけが中を見られる
     match /groups/{code} {
       allow get: if signedIn();                       // コードで存在を確かめる

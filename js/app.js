@@ -52,37 +52,102 @@ function slotRange(slot,sr,ss){
 /* ポイントの種類(岬・港・瀬戸など)。記録に残して、地形ごとの釣れやすさを学習する */
 function kindOf(s){ if(!s) return null; var o=openCache[okey(s)]||s.open||s._open, g=o?classify(o):null, k=s.kind?spotKind(s):(g?g.type:"");
   if(k==="港"&&g&&g.type==="瀬戸(水道)") k="瀬戸(水道)"; return k||null; }
+function spotAt(x){ var sp=allSpots().filter(function(s){return s.id===x.spot_id;})[0];
+  if(!sp&&x.lat!=null) sp=allSpots().filter(function(s){return Math.abs(s.lat-x.lat)<0.003&&distKm(s,x)<0.15;}).sort(function(a,b){return distKm(x,a)-distKm(x,b);})[0]; return sp||null; }
+function openAt(x){ var sp=spotAt(x); return sp?(openCache[okey(sp)]||sp.open||sp._open||null):(x.lat!=null?openCache[okey(x)]||null:null); }
+function encAt(x,op){ var sp=x?spotAt(x):null, pf=sp&&state.pref&&state.pref[sp.id]; if(pf&&pf.cast==="inner") return "閉じた海(湾内・港内)"; if(pf&&pf.cast==="outer") return "外海に開けた場所"; return enclosureBucket(op); }
 function kindAt(x){ if(x.spot_kind) return x.spot_kind; var sp=allSpots().filter(function(s){return s.id===x.spot_id;})[0];
-  if(!sp&&x.lat!=null) sp=allSpots().filter(function(s){return Math.abs(s.lat-x.lat)<0.004&&distKm(s,x)<0.3;})[0]; return kindOf(sp); }
+  if(!sp&&x.lat!=null) sp=allSpots().filter(function(s){return Math.abs(s.lat-x.lat)<0.003&&distKm(s,x)<0.15;}).sort(function(a,b){return distKm(x,a)-distKm(x,b);})[0]; return kindOf(sp); }
 /* ===== 記録からの学習:条件ごとの「釣れた割合」を全体と比べて点数を自動で直す ===== */
 var learnMemo={k:"",v:null};
-function computeLearn(){
-  var mk=state.method+"|"+(state.target||"")+"|"+state.catches.length+"|"+(state.trips||[]).length+"|"+state.catches.reduce(function(a,x){ return a+(x.cond?1:0)+(x.cast_dir?2:0)+(x.water?4:0)+recItems(x).length*8; },0); if(learnMemo.k===mk) return learnMemo.v;
-  var m=METHODS[state.method], units=[], inTrip={}, day={};
+/* 自分の記録を「釣行1回=1件」にまとめる(釣り方を問わず)。みんなの学習に出すときも同じ形を使う
+ * 中身:釣り方・釣れた魚・条件の区分・水温・月だけ。場所・日時・写真・メモは入れない */
+var unitMemo={k:"",v:[]};
+function ownUnits(){
+  var mk=state.catches.length+"|"+(state.trips||[]).length+"|"+state.catches.reduce(function(a,x){ return a+(x.cond?1:0)+(x.cast_dir?2:0)+(x.water?4:0)+recItems(x).length*8+(x.editedAt?16:0); },0);
+  if(unitMemo.k===mk) return unitMemo.v;
+  var units=[], inTrip={}, day={};
   function tm(at,lat,lng){ if(!at||lat==null) return {}; var d=new Date(new Date(at).getTime()+9*36e5), h=d.getUTCHours()+d.getUTCMinutes()/60, st=sunTimes(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate(),lat,lng);
-    var noon=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),3)), tb=timeBucket(h,hm2h(st.rise),hm2h(st.set)); return {time:tb,moon:tb==="夜"?moonBucket(moonAge(noon)):null}; }
-  (state.trips||[]).forEach(function(t){ if((t.method||"eging")!==state.method) return; var mid=t.start&&t.end?new Date((new Date(t.start).getTime()+new Date(t.end).getTime())/2).toISOString():t.start;
-    inTrip[t.id]={cond:t.cond,hit:false,tm:tm(mid,t.lat,t.lng),kind:kindAt(t)}; units.push(inTrip[t.id]); });
-  state.catches.forEach(function(x){ var hit=recItems(x).some(function(it){ return it.count>0&&targetHit(it.kind,m,state.target); });
-    if(x.trip_id&&inTrip[x.trip_id]){ if(hit) inTrip[x.trip_id].hit=true; return; }
-    if(!((x.method||"eging")===state.method||hit)) return;
-    /* 同じ日・同じ場所(約1km)の記録は1回の釣行にまとめる */
-    var dk=(x.at?new Date(new Date(x.at).getTime()+9*36e5).toISOString().slice(0,10):x.id)+"|"+(x.lat!=null?Math.round(x.lat*100)+","+Math.round(x.lng*100):x.spot_id);
-    if(day[dk]){ if(hit) day[dk].hit=true; return; }
-    day[dk]={cond:x.cond,hit:hit,tm:tm(x.at,x.lat,x.lng),kind:kindAt(x)}; units.push(day[dk]); });
-  var n=units.length, hits=units.filter(function(u){return u.hit;}).length, out=null;
-  if(n>=8&&hits<n&&hits>0){ var p0=hits/n, K=6; out={n:n};
-    ["rain","tide","wind","kind","temp","rough"].forEach(function(f){ var g={};
-      units.forEach(function(u){ var b=learnBuckets(Object.assign({},u.cond||{},{method:state.method,target:state.target,spot_kind:u.kind}))[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(u.hit) o.h++; });
-      out[f]={}; Object.keys(g).forEach(function(b){ var o=g[b], pb=(o.h+p0*K)/(o.n+K); out[f][b]=Math.max(-5,Math.min(5,Math.round((pb-p0)*20))); }); });
-    ["time","moon"].forEach(function(f){ var g={};
-      units.forEach(function(u){ var b=u.tm&&u.tm[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(u.hit) o.h++; });
-      out[f]={}; Object.keys(g).forEach(function(b){ var o=g[b], pb=(o.h+p0*K)/(o.n+K); out[f][b]=Math.max(-5,Math.min(5,Math.round((pb-p0)*20))); }); }); }
+    var noon=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),3)), tb=timeBucket(h,hm2h(st.rise),hm2h(st.set)); return {time:tb,moon:tb==="夜"?moonBucket(moonAge(noon)):null,mo:d.getUTCMonth()+1,wd:d.getUTCDay()}; }
+  function mk1(id,m,cond,t,kind,ll){ var b=learnBuckets(Object.assign({},cond||{},{method:m,spot_kind:kind}));
+    var ph=cond&&cond.tide_phase; ph=/上げ/.test(ph||"")?"上げ潮":(/下げ/.test(ph||"")?"下げ潮":(/止まり/.test(ph||"")?"潮止まり前後":null));
+    var op=ll?openAt(ll):null;
+    return {id:id,m:m,fish:[],b:{rain:b.rain,tide:b.tide,wind:b.wind,kind:b.kind,rough:b.rough,time:t.time||null,moon:t.moon||null,phase:ph,
+      shelter:shelterBucket(op,cond&&cond.wind_dir,cond&&cond.wind_ms),river:riverBucket(cond&&cond.river_km),water:null,
+      wave:b.wave,pres:b.pres,sstt:b.sstt,season:t.mo?learnBuckets({month:t.mo}).season:null,day:t.wd==null?null:learnBuckets({weekday:t.wd}).day,enc:encAt(ll,op)},fc:{},hr:null,sst:cond&&cond.sst_c!=null?Math.round(cond.sst_c):null,mo:t.mo||null,
+      ga:ll&&ll.lat!=null?Math.round(ll.lat*2)/2:null, go:ll&&ll.lng!=null?Math.round(ll.lng*2)/2:null}; }
+  (state.trips||[]).forEach(function(t){ var mid=t.start&&t.end?new Date((new Date(t.start).getTime()+new Date(t.end).getTime())/2).toISOString():t.start;
+    inTrip[t.id]=mk1("t"+t.id,t.method||"eging",t.cond,tm(mid,t.lat,t.lng),kindAt(t),t);
+    /* 30分未満で終えた釣行は、ボウズなら「釣れなかった」とは言い切れないので学習に使わない */
+    inTrip[t.id].short=t.start&&t.end&&(new Date(t.end)-new Date(t.start))<30*60000;
+    if(t.start&&t.end) inTrip[t.id].hr=Math.round((new Date(t.end)-new Date(t.start))/36e5*10)/10; units.push(inTrip[t.id]); });
+  state.catches.forEach(function(x){ var its=recItems(x).filter(function(it){return it.count>0;}), fish=its.map(function(it){return it.kind;});
+    var u=x.trip_id&&inTrip[x.trip_id];
+    if(!u){ /* 同じ日・同じ場所(約1km)・同じ釣り方の記録は1回の釣行にまとめる */
+      var dk=(x.at?new Date(new Date(x.at).getTime()+9*36e5).toISOString().slice(0,10):x.id)+"|"+(x.lat!=null?Math.round(x.lat*100)+","+Math.round(x.lng*100):x.spot_id)+"|"+(x.method||"eging");
+      u=day[dk]; if(!u){ u=day[dk]=mk1("c"+dk.replace(/[^\w]/g,""),x.method||"eging",x.cond,tm(x.at,x.lat,x.lng),kindAt(x),x); units.push(u); } }
+    fish.forEach(function(f){ if(u.fish.indexOf(f)<0) u.fish.push(f); });
+    its.forEach(function(it){ u.fc[it.kind]=(u.fc[it.kind]||0)+it.count; });
+    if(x.water&&!u.b.water) u.b.water=x.water==="inner"?"港内・湾内に投げた":"外海側に投げた"; });
+  units.forEach(function(u){ var cb=comboBuckets(u.b.enc,u.b.kind,u.b); Object.keys(cb).forEach(function(x){ u.b[x]=cb[x]; }); });
+  units=units.filter(function(u){ return !(u.short&&!u.fish.length); });
+  unitMemo={k:mk,v:units}; return units;
+}
+/* ===== 記録からの学習:条件ごとの「釣れた割合」を全体と比べて点数を自動で直す。
+ * みんなの学習に参加していれば、ほかの人の分(場所なし)も合わせて数える ===== */
+function computeLearn(){
+  var pool=(state.poolOn&&state.pool)||[], own=ownUnits();
+  var mk=state.method+"|"+(state.target||"")+"|"+unitMemo.k+"|"+pool.length+"|"+(state.poolOn?1:0); if(learnMemo.k===mk) return learnMemo.v;
+  var m=METHODS[state.method], spc=speciesOf(state.target), tr=(spc&&spc.temp)||METHOD_TEMP[state.method];
+  /* 釣れた数:狙う魚の数を、釣った時間(分からなければ3時間とする)で割って3時間あたりに直し、大きすぎる数で振り回されないよう対数にする */
+  function use(u){ var hit=u.fish.some(function(f){ return targetHit(f,m,state.target); }); if(!(u.m===state.method||hit)) return null;
+    var cnt=0; Object.keys(u.fc||{}).forEach(function(k){ if(targetHit(k,m,state.target)) cnt+=u.fc[k]; }); if(hit&&!cnt) cnt=1;
+    var hr=u.hr&&u.hr>0.5?u.hr:3; return {u:u,hit:hit,y:Math.log(1+cnt*3/hr)}; }
+  var units=own.map(use).filter(Boolean), nOwn=units.length;
+  pool.forEach(function(u){ var x=use(u); if(x){ x.pool=true; units.push(x); } });
+  /* みんなの記録は、今見ている場所に近い地域ほど重く数える(自分の記録は1) */
+  units.forEach(function(x){ if(!x.pool){ x.w=1; return; } if(x.u.ga==null){ x.w=0.15; return; }
+    var d=distKm(state.center,{lat:x.u.ga,lng:x.u.go}); x.w=d<60?1:(d<150?0.6:(d<400?0.3:0.15)); });
+  var n=units.length, hits=units.filter(function(x){return x.hit;}).length, out=null;
+  function bucket(x,f){ if(f==="temp"){ var v=x.u.sst; if(v==null||!tr) return null; return (v>=tr[0]&&v<=tr[1])?"適水温":(v<tr[0]?"水温が低め":"水温が高め"); } return x.u.b[f]||null; }
+  if(n>=8&&hits<n&&hits>0){ var W=units.reduce(function(a,x){return a+x.w;},0), WH=units.reduce(function(a,x){return a+(x.hit?x.w:0);},0), p0=WH/W, K=6, y0=units.reduce(function(a,x){return a+x.y*x.w;},0)/W; out={n:n,own:nOwn,pool:n-nOwn};
+    ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind"].forEach(function(f){ var g={};
+      units.forEach(function(x){ var b=bucket(x,f); if(!b) return; var o=g[b]=g[b]||{n:0,h:0,y:0}; o.n+=x.w; if(x.hit) o.h+=x.w; o.y+=x.y*x.w; });
+      /* 「釣れた割合」と「釣れた数」の両方を全体と比べる(回数が少ない区分は全体の値に寄せる) */
+      out[f]={}; Object.keys(g).forEach(function(b){ var o=g[b], pb=(o.h+p0*K)/(o.n+K), yb=(o.y+y0*K)/(o.n+K), ha=(pb-p0)*20, ca=y0>0?(yb-y0)/y0*6:0;
+        out[f][b]=Math.max(-5,Math.min(5,Math.round(ha*0.6+ca*0.4))); }); }); }
   learnMemo={k:mk,v:out}; return out;
+}
+/* ===== みんなの学習:参加している人の「釣行1回分の条件と結果」を出し合う ===== */
+/* みんなの記録のまとめ(参加している人の、場所なしの条件と結果) */
+var FACTOR_NAME={enc:"場所の開け具合",encwind:"開け具合×風",encwave:"開け具合×波",enctide:"開け具合×潮",kindwind:"地形×風",season:"季節",day:"平日・土日",wave:"波",pres:"気圧の変化",sstt:"水温の変化",rain:"前の雨",tide:"潮の大きさ",phase:"潮の上げ下げ",wind:"風の強さ",shelter:"風と場所の関係",river:"川の近さ",kind:"地形",temp:"水温",rough:"時化",time:"時間帯",moon:"夜の月明かり",water:"投げた先"};
+function renderPool(){
+  var el=document.getElementById("poolSum"); if(!el) return;
+  if(!state.poolOn){ el.innerHTML=""; return; }
+  var m=METHODS[state.method], list=(state.pool||[]).filter(function(u){ return u.m===state.method||u.fish.some(function(f){return targetHit(f,m,state.target);}); });
+  if(!list.length){ el.innerHTML='<p class="src">みんなの記録('+esc(m.name)+'):まだありません。仲間にも「みんなの学習に参加する」をオンにしてもらうと、ここに出ます。</p>'; return; }
+  var hit=function(u){ return u.fish.some(function(f){return targetHit(f,m,state.target);}); }, h=list.filter(hit).length;
+  var rows=Object.keys(FACTOR_NAME).map(function(f){ var g={}; list.forEach(function(u){ var b=u.b&&u.b[f]; if(!b) return; var o=g[b]=g[b]||{n:0,h:0}; o.n++; if(hit(u)) o.h++; });
+    var ks=Object.keys(g); if(!ks.length) return "";
+    return '<tr><th>'+esc(FACTOR_NAME[f])+'</th><td>'+ks.sort(function(a,b){return g[b].n-g[a].n;}).map(function(k){ return esc(k)+' <b>'+Math.round(g[k].h/g[k].n*100)+'%</b><small>('+g[k].n+'回)</small>'; }).join("、")+'</td></tr>'; }).join("");
+  el.innerHTML='<h3 style="margin:14px 0 4px">みんなの記録('+esc(state.target||m.name)+')</h3><p class="src">参加している人の釣行 '+list.length+'回のうち '+h+'回釣れた('+Math.round(h/list.length*100)+'%)。条件ごとの「釣れた割合」です(回数が少ないものは、たまたまのことがあります)。場所と日時は含みません。</p><table class="pooltbl">'+rows+'</table>';
+}
+function poolSync(){
+  if(Store.mode!=="cloud") return;
+  if(!state.poolOn){ Store.poolSave([]).catch(function(){}); return; }
+  var own=ownUnits().map(function(u){ return {k:u.id.slice(0,60),m:u.m,f:u.fish.slice(0,10),fc:u.fc,hr:u.hr,b:u.b,s:u.sst,mo:u.mo,ga:u.ga,go:u.go}; });
+  Store.poolSave(own).catch(function(e){ console.warn("みんなの学習に出せませんでした",e); });
+}
+/* みんなの記録は端末に6時間覚えておき、その間は読み直さない(Firebase の読み込み回数を使いすぎない) */
+function poolLoad(force){
+  if(Store.mode!=="cloud"||!state.poolOn) return;
+  try{ var cv=JSON.parse(localStorage.getItem("en.poolcache")||"null"); if(!force&&cv&&cv.uid===Store.uidShort&&Date.now()-cv.at<6*36e5){ state.pool=cv.list; learnMemo={k:"",v:null}; condMemo={}; render(); renderPool(); return; } }catch(e){}
+  Store.poolLoad().then(function(list){ try{ localStorage.setItem("en.poolcache",JSON.stringify({at:Date.now(),uid:Store.uidShort,list:list.map(function(d){ return {m:d.m,fish:d.f||[],fc:d.fc||{},hr:d.hr,b:d.b||{},sst:d.s,mo:d.mo,ga:d.ga,go:d.go}; })})); }catch(e){} state.pool=list.map(function(d){ return {m:d.m,fish:d.f||[],fc:d.fc||{},hr:d.hr,b:d.b||{},sst:d.s,mo:d.mo,ga:d.ga,go:d.go}; }); learnMemo={k:"",v:null}; condMemo={}; render(); renderPool(); })
+    .catch(function(e){ console.warn("みんなの学習を読めませんでした",e); });
 }
 function baseCond(){
   var D=jstDate(state.offset), noon=new Date(Date.UTC(D.y,D.m-1,D.d,3)), st=sunTimes(D.y,D.m,D.d,state.center.lat,state.center.lng), age=moonAge(noon);
-  var c={learn:computeLearn(),target:state.target||"",method:state.method,date:D.key,w:D.w,month:D.m,moon_age:age,tide_name:tideNameFromAge(age),sunrise:st.rise,sunset:st.set,
+  var c={learn:computeLearn(),target:state.target||"",method:state.method,date:D.key,w:D.w,weekday:new Date(Date.UTC(D.y,D.m-1,D.d)).getUTCDay(),month:D.m,moon_age:age,tide_name:tideNameFromAge(age),sunrise:st.rise,sunset:st.set,
     wind_dir:null,wind_ms:null,wave_m:null,rain_max:null,weather:null,tide_events:null,auto:false};
   var day=state.wx&&state.wx.days[D.key];
   if(day){ if(day.sunrise){c.sunrise=day.sunrise;c.sunset=day.sunset;}
@@ -111,7 +176,9 @@ function spotCond(c,s,from,to,key){
   if(d1){ var sm=Wx.summarize(d1,from,to); if(sm){ Object.assign(o,sm); o.wind_by_hour=d1.speed; o.rain_by_hour=d1.rain; o.perSpot.push("wx"); } }
   var rb=Wx.rainSum(dd,key,Math.floor(from||0)); if(rb){ o.rain24=rb.r24; o.rain72=rb.r72; }
   var rg=Wx.roughBefore(dd,key,Math.floor(from||0)); if(rg){ o.prev_wind=rg.wind; o.prev_wave=rg.wave; }
-  var sst=Wx.sstAt(dd,key,Math.floor(((from||0)+(to||from||0))/2)); if(sst!=null) o.sst_c=sst;
+  var mh=Math.floor(((from||0)+(to||from||0))/2), sst=Wx.sstAt(dd,key,mh); if(sst!=null) o.sst_c=sst;
+  var pt=Wx.trendBefore(dd,key,mh,"pres",12); if(pt!=null) o.pres_trend=pt;
+  var stt=Wx.trendBefore(dd,key,mh,"sst",48); if(stt!=null) o.sst_trend=stt;
   var rv=riverNear(s); if(rv!=null) o.river_km=rv;
   var sn=Wx.nearestStation(s);
   if(sn){ var ti=Wx.tideInfo(sn.code,key);
@@ -293,9 +360,57 @@ var openCache={}, openPending={}, rerenderT=null;
 function okey(s){return s.lat.toFixed(5)+","+s.lng.toFixed(5);}
 function localRings(lng,lat,dx,dy){var out=[];Object.keys(detail).forEach(function(k){var d=detail[k];if(!d)return;d.rings.forEach(function(r){if(bbHit(r.b,lng-dx,lat-dy,lng+dx,lat+dy))out.push(r);});});return out;}
 function pip(rings,x,y){var ins=false;rings.forEach(function(r){if(x<r.b[0]||x>r.b[2]||y<r.b[1]||y>r.b[3])return;var xs=r.xs,ys=r.ys,n=xs.length;for(var i=0,j=n-1;i<n;j=i++){if(((ys[i]>y)!==(ys[j]>y))&&(x<(xs[j]-xs[i])*(y-ys[i])/(ys[j]-ys[i])+xs[i]))ins=!ins;}});return ins;}
+
+/* ===== 細かい海岸線と堤防(OpenStreetMap)。堤防・波止・突堤・岸壁は「投げられない壁」として、海の開き方を測り直す ===== */
+var geoTiles={}, geoGrid={}, geoSegs={}, geoBusy=false, geoVer=0;
+function gCell(x,y){ return Math.floor(y*100)+","+Math.floor(x*100); }
+function addSegs(a){ for(var i=0;i<a.length;i+=4){ var x1=a[i],y1=a[i+1],x2=a[i+2],y2=a[i+3], cx0=Math.floor(Math.min(x1,x2)*100), cx1=Math.floor(Math.max(x1,x2)*100), cy0=Math.floor(Math.min(y1,y2)*100), cy1=Math.floor(Math.max(y1,y2)*100);
+  for(var cx=cx0;cx<=cx1;cx++) for(var cy=cy0;cy<=cy1;cy++){ var k=cy+","+cx; (geoGrid[k]=geoGrid[k]||[]).push(i===0&&false?null:[x1,y1,x2,y2]); } } }
+function geoIdb(){ return new Promise(function(ok,ng){ try{ var r=indexedDB.open("en-geo",1); r.onupgradeneeded=function(){ r.result.createObjectStore("t"); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ng(r.error); }; }catch(e){ ng(e); } }); }
+function geoGet(k){ return geoIdb().then(function(d){ return new Promise(function(ok){ var q=d.transaction("t").objectStore("t").get(k); q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ok(null); }; }); }).catch(function(){ return null; }); }
+function geoPut(k,v){ geoIdb().then(function(d){ d.transaction("t","readwrite").objectStore("t").put(v,k); }).catch(function(){}); }
+function geoReady(lat,lng){ return !!geoTiles[Math.floor(lng*10)+","+Math.floor(lat*10)]; }
+/* 光線(pin から th 方向へ len km)が最初に当たる線までの距離。off より手前の線は、自分が立っている堤防として無視する */
+function segHit(lng,lat,rx,ry,off){
+  var best=1, x0=Math.min(lng,lng+rx), x1=Math.max(lng,lng+rx), y0=Math.min(lat,lat+ry), y1=Math.max(lat,lat+ry), seen={};
+  for(var cx=Math.floor(x0*100);cx<=Math.floor(x1*100);cx++) for(var cy=Math.floor(y0*100);cy<=Math.floor(y1*100);cy++){ var g=geoGrid[cy+","+cx]; if(!g) continue;
+    for(var i=0;i<g.length;i++){ var sg=g[i]; var sx=sg[2]-sg[0], sy=sg[3]-sg[1], den=rx*sy-ry*sx; if(den===0) continue;
+      var qx=sg[0]-lng, qy=sg[1]-lat, t=(qx*sy-qy*sx)/den, u=(qx*ry-qy*rx)/den; if(t>off&&t<best&&u>=0&&u<=1) best=t; } }
+  return best; }
+function loadGeo(){
+  if(geoBusy||!map||map.getZoom()<11) return; var c=state.center, r=Math.min(radius(),20)+2, kx=111.32*Math.cos(c.lat*Math.PI/180);
+  var x0=Math.floor((c.lng-r/kx)*10), x1=Math.floor((c.lng+r/kx)*10), y0=Math.floor((c.lat-r/110.6)*10), y1=Math.floor((c.lat+r/110.6)*10), want=[];
+  for(var tx=x0;tx<=x1;tx++) for(var ty=y0;ty<=y1;ty++){ var k=tx+","+ty; if(!geoTiles[k]) want.push([tx,ty]); }
+  if(!want.length) return; geoBusy=true;
+  Promise.all(want.map(function(t){ return geoGet("g1."+t[0]+","+t[1]).then(function(v){ return {t:t,v:v}; }); })).then(function(rs){
+    var need=[]; rs.forEach(function(x){ var k=x.t[0]+","+x.t[1]; if(x.v&&Date.now()-x.v.at<180*864e5){ geoTiles[k]=1; geoSegs[k]=x.v.s; addSegs(x.v.s); geoPut("u."+k,Date.now()); } else need.push(x.t); });
+    if(!need.length){ geoDone(); return; }
+    var chunks=[]; for(var i=0;i<need.length;i+=6) chunks.push(need.slice(i,i+6));
+    return chunks.reduce(function(p,ch){ return p.then(function(){
+      var bx0=Math.min.apply(null,ch.map(function(t){return t[0];}))/10, bx1=(Math.max.apply(null,ch.map(function(t){return t[0];}))+1)/10, by0=Math.min.apply(null,ch.map(function(t){return t[1];}))/10, by1=(Math.max.apply(null,ch.map(function(t){return t[1];}))+1)/10;
+      var B="("+by0+","+bx0+","+by1+","+bx1+")";
+      return overpass('[out:json][timeout:40];(way["natural"="coastline"]'+B+';way["man_made"~"^(breakwater|pier|groyne|quay)$"]'+B+';way["natural"="breakwater"]'+B+';);out geom'+B+' qt;').then(function(j){
+        var per={}; ch.forEach(function(t){ per[t[0]+","+t[1]]=[]; });
+        (j.elements||[]).forEach(function(e){ var g=e.geometry||[]; for(var i=1;i<g.length;i++){ var a=g[i-1], b=g[i]; if(!a||!b) continue;
+          var mx=(a.lon+b.lon)/2, my=(a.lat+b.lat)/2, k=Math.floor(mx*10)+","+Math.floor(my*10); if(per[k]) per[k].push(+a.lon.toFixed(5),+a.lat.toFixed(5),+b.lon.toFixed(5),+b.lat.toFixed(5)); } });
+        Object.keys(per).forEach(function(k){ geoTiles[k]=1; geoSegs[k]=per[k]; addSegs(per[k]); geoPut("g1."+k,{at:Date.now(),s:per[k]}); geoPut("u."+k,Date.now()); });
+      }); }); },Promise.resolve()).then(geoDone);
+  }).catch(function(e){ console.warn("細かい海岸線を取れませんでした",e); geoBusy=false; setTimeout(loadGeo,120000); });
+}
+/* 端末の中の海岸線データを増やしすぎない:半年使っていない場所は消し、多すぎるときは古い順に消す(上限400区画・約数十MB以内) */
+function geoCleanup(){ geoIdb().then(function(d){ var st=d.transaction("t","readwrite").objectStore("t"), rq=st.getAllKeys();
+  rq.onsuccess=function(){ var keys=rq.result.filter(function(k){return /^u\./.test(k);}), vals=[], left=keys.length; if(!left) return;
+    keys.forEach(function(k){ var g=d.transaction("t").objectStore("t").get(k); g.onsuccess=function(){ vals.push([k.slice(2),g.result||0]); if(--left===0) prune(); }; }); 
+    function prune(){ vals.sort(function(a,b){return b[1]-a[1];}); var del=vals.filter(function(v,i){ return i>=400||Date.now()-v[1]>180*864e5; });
+      if(!del.length) return; var w=d.transaction("t","readwrite").objectStore("t"); del.forEach(function(v){ w.delete("g1."+v[0]); w.delete("u."+v[0]); }); } }; }).catch(function(){}); }
+/* 画面の中の海岸線データも、今見ている所から遠い区画は手放す */
+function geoTrim(){ var c=state.center, ks=Object.keys(geoTiles); if(ks.length<=80) return; var cut=false;
+  ks.forEach(function(k){ var p=k.split(","), lng=(+p[0]+0.5)/10, lat=(+p[1]+0.5)/10; if(distKm(c,{lat:lat,lng:lng})>80){ delete geoTiles[k]; delete geoSegs[k]; cut=true; } });
+  if(cut){ geoGrid={}; Object.keys(geoSegs).forEach(function(k){ addSegs(geoSegs[k]); }); } }
+function geoDone(){ geoBusy=false; geoVer++; if(geoVer===1) setTimeout(geoCleanup,10000); geoTrim(); Object.keys(openCache).forEach(function(k){ var p=k.split(","); if(geoReady(+p[0],+p[1])&&!(openCache[k]&&openCache[k].geo)) delete openCache[k]; }); condMemo={}; render(); }
 function measureOpen(lat,lng){
   var L5=5, ky=110.57, kx=111.32*Math.cos(lat*Math.PI/180), dx=(L5+0.5)/kx, dy=(L5+0.5)/ky;
-  var rings=localRings(lng,lat,dx,dy), res=[], off=0.03/L5;
+  var rings=localRings(lng,lat,dx,dy), res=[], off=0.03/L5, useGeo=geoReady(lat,lng);
   for(var k=0;k<16;k++){
     var th=k*Math.PI/8, ex=lng+Math.sin(th)*L5/kx, ey=lat+Math.cos(th)*L5/ky, rx=ex-lng, ry=ey-lat, ts=[];
     var land=pip(rings,lng+rx*off,lat+ry*off);
@@ -311,8 +426,11 @@ function measureOpen(lat,lng){
       else { run=(ts[q]-start)*L5; done=true; break; }
     }
     if(!done) run=(land?0:(1-start)*L5);
+    /* 細かい海岸線・堤防があれば、それに当たるまでの距離で短くする */
+    if(useGeo&&run>0){ var st=(start==null?off:start), hit=segHit(lng+rx*st,lat+ry*st,rx*(1-st),ry*(1-st),off/(1-st)); var r2=hit*(1-st)*L5; if(r2<run) run=r2; }
     res.push(Math.round(run*100)/100);
   }
+  if(useGeo) res.geo=true;
   return res;
 }
 function ensureOpen(s){
@@ -324,7 +442,9 @@ function ensureOpen(s){
     clearTimeout(rerenderT); rerenderT=setTimeout(render,120);
   });
 }
-function withOpen(s){var o=openCache[okey(s)];return o?Object.assign({},s,{_open:o}):s;}
+function bindCastPref(){ Array.prototype.forEach.call(document.querySelectorAll("[data-castpref]"),function(sl){ sl.onchange=function(){ var id=sl.dataset.castpref, v=sl.value;
+  Store.savePref(id,v?{cast:v}:null).catch(function(){}); state.pref=Object.assign({},state.pref); if(v) state.pref[id]={cast:v}; else delete state.pref[id]; condMemo={}; learnMemo={k:"",v:null}; unitMemo={k:"",v:[]}; render(); }; }); }
+function withOpen(s){var o=openCache[okey(s)], pf=state.pref&&state.pref[s.id], x=o?Object.assign({},s,{_open:o}):s; if(pf&&pf.cast){ if(x===s) x=Object.assign({},s); x._cast=pf.cast; } return x;}
 
 function compassSvg(open,ca,c){
   var R=46,cx=60,cy=60,g='';
@@ -344,8 +464,10 @@ function castBlock(s,c){
   if(c&&c.condFor) c=c.condFor(s);
   var o=openCache[okey(s)];
   if(!o) return '<div class="cast"><div class="castTxt" style="color:var(--sub)">地形を読み込んで、投げる向きを計算しています…</div></div>';
-  var ca=castAdvice(o,c,s);
-  return '<div class="cast">'+compassSvg(o,ca,c)+'<div class="castTxt"><span class="lbl">投げる向き</span>'+esc(ca.text)+(s.cast?'<br><span class="lbl">現地情報</span>'+esc(s.cast):'')+
+  var ca=castAdvice(o,c,s), pf=(state.pref&&state.pref[s.id]&&state.pref[s.id].cast)||"";
+  var sel='<label class="castpref">投げられる海<select data-castpref="'+esc(s.id)+'">'+[["","地形から自動"],["inner","港内・湾内だけ"],["outer","外海側だけ"],["both","両方"]].map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===pf?' selected':'')+'>'+x[1]+'</option>'; }).join("")+'</select></label>';
+  var srcTxt=pf?'<span class="src">自分で決めた向きを使っています</span>':(o.geo?'<span class="src">細かい海岸線と堤防の線で測っています</span>':'<span class="src">おおまかな海岸線で測っています(堤防は入っていません。細かいデータを読み込み中か、この場所には無い)</span>');
+  return '<div class="cast">'+compassSvg(o,ca,c)+'<div class="castTxt"><span class="lbl">投げる向き</span>'+esc(ca.text)+'<div>'+sel+' '+srcTxt+'</div>'+(s.cast?'<br><span class="lbl">現地情報</span>'+esc(s.cast):'')+
     '<div class="castKey"><i class="sw" style="background:var(--buoy)"></i>おすすめの向き <i class="sw" style="background:var(--sea);opacity:.5"></i>海が開いている向き(長いほど沖まで開けている) <span>→ 風</span></div></div></div>';
 }
 function nearestPlace(ll){var b=null,bd=1e9;PLACES.forEach(function(p){var d=distKm(ll,{lat:p[1],lng:p[2]});if(d<bd){bd=d;b=p;}});return b?{name:b[0],lat:b[1],lng:b[2],dist:bd}:null;}
@@ -469,7 +591,7 @@ var logSpotId=null;
 function recItems(x){ if(x.items) return x.items; return x.count>0?[{kind:x.kind||"アオリイカ",count:x.count,size:x.max_g?x.max_g+"g":""}]:[]; }
 function logStats(id,sp){
   var m=METHODS[state.method], t=0,h=0,n=0, all={}, dirs={}, water={}, wind=[], dayT={}, dayH={};
-  var atSp=function(x){ return x.spot_id===id||(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.004&&distKm(x,sp)<0.3); };
+  var atSp=function(x){ return x.spot_id===id||(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.003&&distKm(x,sp)<0.15); };
   var trips=(state.trips||[]).filter(function(tr){ return atSp(tr)&&((tr.method||"eging")===state.method); }), tripIds={}, tripHit={};
   trips.forEach(function(tr){ tripIds[tr.id]=1; });
   state.catches.forEach(function(x){ if(x.trip_id&&tripIds[x.trip_id]){ var mi=recItems(x).filter(function(it){ return it.count>0&&targetHit(it.kind,m,state.target); }); if(mi.length) tripHit[x.trip_id]=1; } });
@@ -557,6 +679,21 @@ function readExif(buf){
 }
 function recView(on){ document.getElementById("recView").hidden=!on; document.body.classList.toggle("recOpen",on); }
 function photoWarn(){ var w=document.getElementById("lgPhotoWarn"); if(w) w.hidden=Store.mode==="cloud"; }
+/* 記録に付ける小さい写真:長い辺480px、30KB くらいまで縮める */
+function thumbOf(img){ var mx=480, sc=Math.min(1,mx/Math.max(img.width,img.height)), cv=document.createElement("canvas"); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+  cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height); var q=0.7, du=cv.toDataURL("image/jpeg",q);
+  while(du.length>40000&&q>0.3){ q-=0.08; du=cv.toDataURL("image/jpeg",q); }
+  if(du.length>40000){ var c2=document.createElement("canvas"); c2.width=Math.round(cv.width*0.7); c2.height=Math.round(cv.height*0.7); c2.getContext("2d").drawImage(cv,0,0,c2.width,c2.height); du=c2.toDataURL("image/jpeg",0.6); }
+  return du; }
+/* 1人あたりの小さい写真の上限。超えたら古い写真から消す(記録は残す) */
+var PHOTO_MAX=500;
+function trimPhotos(){ var ph=state.catches.filter(function(x){return x.photo;}).sort(function(a,b){return (a.at||"")>(b.at||"")?1:-1;});
+  var over=ph.length-PHOTO_MAX; if(over<=0) return; ph.slice(0,over).forEach(function(x){ Store.deletePhoto(x.id).catch(function(){}); Store.updateCatch(x.id,{photo:false,photo_note:"写真はスマホにあります"}).catch(function(){}); }); }
+/* 前に保存した大きい写真を、小さく縮め直して入れ替える(この端末で一度だけ) */
+function shrinkOldPhotos(){ try{ if(localStorage.getItem("en.photoShrunk2")) return; }catch(e){ return; }
+  var ids=state.catches.filter(function(x){return x.photo;}).map(function(x){return x.id;}); if(!ids.length) return;
+  var i=0; (function next(){ if(i>=ids.length){ try{ localStorage.setItem("en.photoShrunk2","1"); }catch(e){} return; } var id=ids[i++];
+    Store.getPhoto(id).then(function(src){ if(!src||src.length<=45000) return next(); var im=new Image(); im.onload=function(){ Store.savePhoto(id,thumbOf(im)).then(next,next); }; im.onerror=next; im.src=src; }).catch(next); })(); }
 function onPhoto(file,fromCamera){
   var msg=document.getElementById("lgPhotoMsg"); if(!file) return; photoWarn(); msg.textContent="写真を縮めています…";
   file.slice(0,262144).arrayBuffer().then(function(buf){
@@ -566,10 +703,10 @@ function onPhoto(file,fromCamera){
       setPicked(near?{name:near.name,lat:ll.lat,lng:ll.lng,id:near.id||null,known:true,match:near.name}:{name:townShort(ll).short||"写真の場所",lat:ll.lat,lng:ll.lng,id:null,known:false}); }
     var info=ex&&(ex.date||ex.lat)?"写真から"+[ex.date?"日時":"",ex.lat?"場所":""].filter(Boolean).join("と")+"を入れました。":"";
     var url=URL.createObjectURL(file), img=new Image();
-    img.onload=function(){ var mx=1280, sc=Math.min(1,mx/Math.max(img.width,img.height)), cv=document.createElement("canvas"); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
-      cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height); var q=0.72, du=cv.toDataURL("image/jpeg",q);
-      while(du.length>700000&&q>0.3){ q-=0.12; du=cv.toDataURL("image/jpeg",q); }
-      pendingPhoto=du; URL.revokeObjectURL(url); var pv=document.getElementById("lgPhotoPrev"); pv.src=du; pv.hidden=false; msg.textContent=info||"写真を付けました。"; };
+    img.onload=function(){ pendingPhoto=thumbOf(img); URL.revokeObjectURL(url); var pv=document.getElementById("lgPhotoPrev"); pv.src=pendingPhoto; pv.hidden=false;
+      msg.textContent=(info?info+" ":"")+"小さく縮めた写真を記録に付けます。";
+      /* サイトのカメラで撮った写真は、スマホの写真アプリに残らないことがあるので、元の写真を保存できるようにする */
+      var dl=document.getElementById("lgPhotoSave"); if(fromCamera){ var u2=URL.createObjectURL(file); dl.href=u2; dl.download="釣果_"+document.getElementById("lgAt").value.replace(/[^0-9]/g,"")+".jpg"; dl.hidden=false; } else dl.hidden=true; };
     img.onerror=function(){ msg.textContent="この写真は読み込めませんでした(HEIC の場合は、カメラの設定で「互換性優先」にすると読めます)。"; };
     img.src=url;
   });
@@ -652,7 +789,7 @@ function openEdit(id){
   document.getElementById("lgTackle").value=x.tackle||""; document.getElementById("lgDir").value=x.cast_dir||""; document.getElementById("lgWater").value=x.water||""; document.getElementById("lgMemo").value=x.memo||"";
   if(x.photo) document.getElementById("lgPhotoMsg").textContent="写真あり(新しく選ぶと差し替えます)";
 }
-function closeLog(){ editRec=null; document.getElementById("logTitle").firstChild.textContent="釣果を記録 "; document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
+function closeLog(){ editRec=null; document.getElementById("logTitle").firstChild.textContent="釣果を記録 "; document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgPhotoSave").hidden=true; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
 var logFree=null; /* 過去の釣果:ポイントを選ばずに開いたとき {picked:場所} */
 function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filter(function(x){return x.id===logSpotId;})[0]; }
 function openPast(){
@@ -732,7 +869,7 @@ function saveLog(){
     .then(function(c){ if(c&&(c.wind_ms!=null||c.tide_phase||c.sst_c!=null)) rec.cond=old?c:Object.assign({},rec.cond,c); }).catch(function(){}); });
   var ph=pendingPhoto; if(ph) rec.photo=true;
   var at=activeTrip(); if(!ed&&at&&new Date(iso)>=new Date(at.start)-36e5) rec.trip_id=at.id;
-  chain.then(function(){ return ed?Store.setCatch(ed.id,rec):Store.addCatch(rec); }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
+  chain.then(function(){ return ed?Store.setCatch(ed.id,rec):Store.addCatch(rec); }).then(function(id){ if(ph) setTimeout(trimPhotos,3000); return id; }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
     .then(function(){ document.getElementById("lgSave").disabled=false; });
 }
 
@@ -741,8 +878,8 @@ function pastCond(r){
   var j=new Date(new Date(r.at).getTime()+9*36e5), key=j.toISOString().slice(0,10), h=j.getUTCHours()+j.getUTCMinutes()/60, hi=Math.floor(h);
   var la=r.lat.toFixed(3), lo=r.lng.toFixed(3), q="latitude="+la+"&longitude="+lo+"&start_date="+key+"&end_date="+key+"&timezone=Asia%2FTokyo";
   var k3=new Date(new Date(key+"T00:00:00Z").getTime()-3*864e5).toISOString().slice(0,10);
-  var f=fetch("https://historical-forecast-api.open-meteo.com/v1/forecast?"+q.replace("start_date="+key,"start_date="+k3)+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m&daily=sunrise,sunset&wind_speed_unit=ms").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
-  var m=fetch("https://marine-api.open-meteo.com/v1/marine?"+q+"&hourly=wave_height,sea_surface_temperature").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
+  var f=fetch("https://historical-forecast-api.open-meteo.com/v1/forecast?"+q.replace("start_date="+key,"start_date="+k3)+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,temperature_2m,pressure_msl&daily=sunrise,sunset&wind_speed_unit=ms").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
+  var m=fetch("https://marine-api.open-meteo.com/v1/marine?"+q.replace("start_date="+key,"start_date="+k3)+"&hourly=wave_height,sea_surface_temperature").then(function(x){return x.ok?x.json():null;}).catch(function(){return null;});
   var t=Wx.loadStations().then(function(){ var st=Wx.nearestStation(r); if(!st) return null; return Wx.tideDay(st.code,key).then(function(d){ return d?{st:st,d:d,info:Wx.tideInfo(st.code,key)}:null; }); }).catch(function(){return null;});
   return Promise.all([f,m,t]).then(function(a){
     var w=a[0], mar=a[1], td=a[2], out={past:true};
@@ -750,16 +887,20 @@ function pastCond(r){
       w.hourly.time.forEach(function(tt,i){ var o=all[tt.slice(0,10)]; (o.speed=o.speed||[])[+tt.slice(11,13)]=w.hourly.wind_speed_10m[i]; });
       var rb=Wx.rainSum(all,key,hi); if(rb){ out.rain24=rb.r24; out.rain72=rb.r72; }
       var rg=Wx.roughBefore(all,key,hi); if(rg) out.prev_wind=rg.wind;
+      if(w.hourly.pressure_msl){ w.hourly.time.forEach(function(tt,i){ var o=all[tt.slice(0,10)]; (o.pres=o.pres||[])[+tt.slice(11,13)]=w.hourly.pressure_msl[i]; }); var pt=Wx.trendBefore(all,key,hi,"pres",12); if(pt!=null) out.pres_trend=pt; }
+      if(mar&&mar.hourly&&mar.hourly.sea_surface_temperature){ mar.hourly.time.forEach(function(tt,i){ var o=all[tt.slice(0,10)]=all[tt.slice(0,10)]||{rain:[]}; (o.sst=o.sst||[])[+tt.slice(11,13)]=mar.hourly.sea_surface_temperature[i];
+        if(mar.hourly.wave_height) (o.wave=o.wave||[])[+tt.slice(11,13)]=mar.hourly.wave_height[i]; }); var st2=Wx.trendBefore(all,key,hi,"sst",48); if(st2!=null) out.sst_trend=st2;
+        var rg2=Wx.roughBefore(all,key,hi); if(rg2&&rg2.wave!=null) out.prev_wave=rg2.wave; }
       var i0=w.hourly.time.indexOf(key+"T00:00"); if(i0<0) i0=0;
       var sl=function(a){ return a?a.slice(i0,i0+24):[]; };
       w={hourly:{wind_speed_10m:sl(w.hourly.wind_speed_10m),wind_direction_10m:sl(w.hourly.wind_direction_10m),wind_gusts_10m:sl(w.hourly.wind_gusts_10m),precipitation:sl(w.hourly.precipitation),weather_code:sl(w.hourly.weather_code),temperature_2m:sl(w.hourly.temperature_2m)},daily:w.daily?{sunrise:w.daily.sunrise.slice(-1),sunset:w.daily.sunset.slice(-1)}:null};
       var day={speed:w.hourly.wind_speed_10m,dir:w.hourly.wind_direction_10m,gust:w.hourly.wind_gusts_10m,rain:w.hourly.precipitation,code:w.hourly.weather_code,wave:[]};
-      if(mar&&mar.hourly&&mar.hourly.wave_height) day.wave=mar.hourly.wave_height;
+      if(mar&&mar.hourly&&mar.hourly.wave_height){ var mi0=Math.max(0,mar.hourly.time.indexOf(key+"T00:00")); day.wave=mar.hourly.wave_height.slice(mi0,mi0+24); }
       var sm=Wx.summarize(day,hi,hi); if(sm){ out.weather=sm.weather; out.wind_dir=sm.wind_dir; out.wind_ms=sm.wind_ms; out.gust=sm.gust; if(sm.wave_m!=null) out.wave_m=sm.wave_m; }
       if(w.hourly.temperature_2m&&w.hourly.temperature_2m[hi]!=null) out.air_c=w.hourly.temperature_2m[hi];
       if(w.daily&&w.daily.sunrise){ var sr=w.daily.sunrise[0].slice(11,16), ss=w.daily.sunset[0].slice(11,16); out.sunrise=sr; out.sunset=ss;
         if(Math.abs(h-hm2h(sr))<=1) out.mazume="朝マヅメ"; else if(Math.abs(h-hm2h(ss))<=1) out.mazume="夕マヅメ"; else out.mazume=(h<hm2h(sr)||h>hm2h(ss))?"夜":"日中"; } }
-    if(mar&&mar.hourly&&mar.hourly.sea_surface_temperature&&mar.hourly.sea_surface_temperature[hi]!=null) out.sst_c=Math.round(mar.hourly.sea_surface_temperature[hi]*10)/10;
+    if(mar&&mar.hourly&&mar.hourly.sea_surface_temperature){ var mj=Math.max(0,mar.hourly.time.indexOf(key+"T00:00"))+hi, sv=mar.hourly.sea_surface_temperature[mj]; if(sv!=null) out.sst_c=Math.round(sv*10)/10; }
     if(td){ var dd=td.d, cv=tideCurve(dd.hi.map(function(e){return {type:"満潮",time:e[0],cm:e[1]};}).concat(dd.lo.map(function(e){return {type:"干潮",time:e[0],cm:e[1]};})));
       if(cv){ var near=cv.events.some(function(e){return Math.abs(e.t-h)<0.67;}); out.tide_phase=near?"潮止まり前後":(cv.at(h+0.25)>cv.at(h-0.25)?"上げ潮":"下げ潮"); out.tide_cm=Math.round(cv.at(h)); }
       out.tide_station=td.st.name; if(td.info&&td.info.range!=null){ out.tide_range=td.info.range; if(td.info.mean){ var ratio=td.info.range/td.info.mean; out.tide_class=ratio>=1.12?"大潮":(ratio>=0.85?"中潮":"小潮"); } } }
@@ -843,7 +984,7 @@ function importRecords(){
   var chain=Promise.resolve();
   todo.forEach(function(r){ chain=chain.then(function(){
     msg.textContent="取り込み中… "+done+"/"+todo.length;
-    var fixed=SPOTS.concat(state.mine).filter(function(s){ return distKm(s,r)<0.3; })[0], sid=fixed?fixed.id:(r.spot_id||("imp_"+(r.name||"").replace(/[^\w぀-鿿]/g,"")));
+    var fixed=SPOTS.concat(state.mine).filter(function(s){ return distKm(s,r)<0.15; }).sort(function(a,b){return distKm(r,a)-distKm(r,b);})[0], sid=fixed?fixed.id:(r.spot_id||("imp_"+(r.name||"").replace(/[^\w぀-鿿]/g,"")));
     var pre=Promise.resolve();
     if(!fixed&&!r.noSpot&&!spotsMade[sid]&&!state.mine.some(function(s){return s.id===sid;})){ spotsMade[sid]=1;
       pre=Store.saveSpot(sid,{name:r.name,note:r.spot_note||"",lat:r.lat,lng:r.lng,createdAt:new Date().toISOString(),from_import:true}); }
@@ -856,15 +997,16 @@ function importRecords(){
     .catch(function(e){ console.warn(e); msg.textContent="途中で止まりました("+done+"件まで取り込み済み)。もう一度押すと続きから取り込みます。"; })
     .then(function(){ btn.disabled=false; });
 }
-function renderLog(){
+function renderLog(){ renderPool(); renderLog0(); }
+function renderLog0(){
   var el=document.getElementById("logList"); if(!el) return;
   if(!state.catches.length){ el.innerHTML='<div class="empty">まだ記録はありません。「今釣れた!」や、ポイントのカードの「ここで釣果を記録」から入れられます。釣れなかった日も「ボウズで記録」で残すと、順位づけに使えます。</div>'; return; }
   var all={},hits=0; state.catches.forEach(function(x){ var its=recItems(x); if(its.length) hits++; its.forEach(function(it){ all[it.kind]=(all[it.kind]||0)+it.count; }); });
   var ls=document.getElementById("logSum"); if(ls) ls.textContent="釣果の記録("+state.catches.length+"回)";
   var bySp={}; state.catches.forEach(function(x){ var k=x.spot_name||"?", o=bySp[k]=bySp[k]||{n:0,h:0,f:{}}; o.n++; var its=recItems(x); if(its.length) o.h++; its.forEach(function(it){ o.f[it.kind]=(o.f[it.kind]||0)+it.count; }); });
   var L=computeLearn(), lt="";
-  if(L){ var parts=[]; ["rain","tide","wind","kind","temp","rough","time","moon"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
-    lt='<p><b>記録からの自動調整</b>('+esc(METHODS[state.method].name)+'・'+L.n+'回分):'+(parts.length?esc(parts.join("、")):"まだ条件による差ははっきりしていません")+'</p>'; }
+  if(L){ var parts=[]; ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
+    lt='<p><b>記録からの自動調整</b>('+esc(METHODS[state.method].name)+'・'+L.n+'回分'+(L.pool?'。うち自分 '+L.own+'回・みんな '+L.pool+'回':'')+'):'+(parts.length?esc(parts.join("、")):"まだ条件による差ははっきりしていません")+'</p>'; }
   else lt='<p><b>記録からの自動調整</b>:'+esc(METHODS[state.method].name)+'で、ボウズも含めて8回以上の記録がたまると始まります。釣り開始〜終了で残すと、ボウズの回も自然に入ります。</p>';
   var rs=document.getElementById("recSpots"); if(rs) rs.innerHTML=lt+'<b>場所ごと</b><br>'+Object.keys(bySp).sort(function(a,b){return bySp[b].n-bySp[a].n;}).map(function(k){ var o=bySp[k]; return esc(k)+':'+o.n+'回中'+o.h+'回釣れた'+(Object.keys(o.f).length?'('+esc(fishSummary(o.f))+')':''); }).join("<br>");
   el.innerHTML='<div class="logsum">'+state.catches.length+'回の釣行で、'+hits+'回釣れた'+(Object.keys(all).length?'('+esc(fishSummary(all))+')':'')+'</div>'+state.catches.slice(0,30).map(function(x){
@@ -873,7 +1015,7 @@ function renderLog(){
     var itxt=its.map(function(it){ var u=/イカ/.test(it.kind)?"杯":"匹"; return esc(it.kind)+' '+it.count+u+(it.size?'('+esc(it.size)+')':''); }).join("、");
     return '<div class="logrow"><div class="lt num">'+fmtAt(x.at)+'</div><div class="lb"><b>'+esc(x.spot_name)+'</b> <span class="cnt'+(its.length?'':' zero')+'">'+(its.length?esc(mname):"ボウズ")+'</span> '+itxt+
       '<small>'+esc([x.tackle||"",x.egi_size?"エギ"+x.egi_size+"号":"",x.egi_color||"",x.cast_dir?x.cast_dir+"へ投げた":"",x.water?WATER_NAME[x.water]:""].filter(Boolean).join(" ・ "))+(cond?' / '+esc(cond):'')+(x.memo?' / '+esc(x.memo):'')+'</small></div>'+
-      '<span>'+(x.photo?'<button class="btn sm" data-lgph="'+esc(x.id)+'">写真</button> ':'')+'<button class="btn sm" data-lged="'+esc(x.id)+'">直す</button> '+'<button class="btn sm" data-lgcast="'+esc(x.id)+'">'+(x.cast_dir?'向きを直す':'地図で向き')+'</button>'+(x.cast_dir&&!x.water?' <button class="btn sm" data-lgwater="'+esc(x.id)+'">港内か外海か</button>':'')+' <button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></span></div>';
+      '<span>'+(x.photo?'<button class="btn sm" data-lgph="'+esc(x.id)+'">写真</button> ':(x.photo_note?'<small class="src">'+esc(x.photo_note)+'</small> ':''))+'<button class="btn sm" data-lged="'+esc(x.id)+'">直す</button> '+'<button class="btn sm" data-lgcast="'+esc(x.id)+'">'+(x.cast_dir?'向きを直す':'地図で向き')+'</button>'+(x.cast_dir&&!x.water?' <button class="btn sm" data-lgwater="'+esc(x.id)+'">港内か外海か</button>':'')+' <button class="btn sm" data-lgdel="'+esc(x.id)+'">削除</button></span></div>';
   }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-lgcast]"),function(b){ b.onclick=function(){
     var x=state.catches.filter(function(c){return c.id===b.dataset.lgcast;})[0]; if(!x||x.lat==null) return;
@@ -945,7 +1087,7 @@ function loadRivers(){
   }).catch(function(){ riverBusy=false; setTimeout(loadRivers,90000); });
 }
 function loadBeaches(){
-  setTimeout(loadRivers,1500);
+  setTimeout(loadRivers,1500); setTimeout(loadGeo,2500);
   var c=state.center, r=Math.min(radius(),20), key=osmKey(c,r), my=++osmSeq;
   if(osmCache[key]){ state.beaches=osmCache[key].beaches; state.osm=osmCache[key].osm; state.beachMsg=""; render(); return; }
   try{ var sv=JSON.parse(localStorage.getItem(key)||"null"); if(sv&&Date.now()-sv.at<7*864e5){ osmCache[key]=sv.d; state.beaches=sv.d.beaches; state.osm=sv.d.osm; state.beachMsg=""; render(); return; } }catch(e){}
@@ -1083,7 +1225,7 @@ function render(){
   Array.prototype.forEach.call(document.querySelectorAll(".row"),function(el){el.onclick=function(){var s=allSpots().filter(function(x){return x.id===el.dataset.id;})[0];if(s&&map){map.panTo([s.lat,s.lng]);} var t=document.getElementById("sp-"+el.dataset.id);if(t){ t.open=true; if(t.parentElement.closest("details"))t.parentElement.closest("details").open=true; } if(t)t.scrollIntoView({behavior:"smooth",block:"center"});};});
   drawTide(ct,top.spot,wins);
   document.getElementById("tideH").textContent="潮と時間帯(一押しの"+top.spot.name+(ct.tide_station?"・"+ct.tide_station+"の潮位":"")+")";
-  renderSpots(ranked,c); renderLog(); bindShare();
+  renderSpots(ranked,c); renderLog(); bindShare(); bindCastPref();
   Array.prototype.forEach.call(document.querySelectorAll("[data-log]"),function(b){b.onclick=function(){openLog(b.dataset.log);};});
   Array.prototype.forEach.call(document.querySelectorAll("[data-xy]"),function(b){b.onclick=function(){var v=b.dataset.xy;var done=function(){b.textContent="コピーしました";};try{navigator.clipboard.writeText(v).then(done,function(){b.textContent=v;});}catch(e){b.textContent=v;}};});
 }
@@ -1288,7 +1430,7 @@ function groupSpotList(){
   state.groups.forEach(function(g){ (state.groupSpots[g.code]||[]).forEach(function(x){
     if(x.by===Store.uid) return;
     var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{id:"g_"+g.code+"_"+x.docId,shared:true,groupName:g.name,groupCode:g.code,byName:x.byName||"仲間"});
-    if(x.open) openCache[okey(o)]=x.open;
+    if(x.open&&!openCache[okey(o)]&&!geoReady(o.lat,o.lng)) openCache[okey(o)]=x.open;
     out.push(o);
   }); });
   return out;
@@ -1453,7 +1595,7 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   initMap(); render(); scheduleAuto(); loadConditions(); loadBeaches();
   if("serviceWorker" in navigator&&location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(function(e){ console.warn(e); });
   Store.on("auth",function(){ renderAuth(); renderGroups(); render(); });
-  Store.on("spots",function(list){ state.mine=list.map(function(x){ var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{mine:true}); if(x.open) openCache[okey(o)]=x.open; return o; });
+  Store.on("spots",function(list){ state.mine=list.map(function(x){ var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{mine:true}); if(x.open&&!openCache[okey(o)]&&!geoReady(o.lat,o.lng)) openCache[okey(o)]=x.open; return o; });
     var ids={}; state.mine.forEach(function(s){ids[s.id]=1;}); state.auto=state.auto.filter(function(s){return !ids[s.id];}); render(); });
   var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=curLogSpot(); if(!s){ document.getElementById("lgMsg").textContent="先に場所を選んでください。"; return; } document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
   document.getElementById("pastBtn").onclick=openPast;
@@ -1474,13 +1616,18 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("tripCancel").onclick=function(){ var b=this; if(b.dataset.armed){ setActiveTrip(null); b.dataset.armed=""; b.textContent="取り消す"; document.getElementById("tripMsg").textContent="釣り開始を取り消しました(記録は残りません)。"; } else { b.dataset.armed="1"; b.textContent="もう一度押すと取り消し"; } };
   renderTripBar(); setInterval(renderTripBar,60000);
   Store.on("activeTrip",onCloudTrip);
+  Store.on("poolOn",function(v){ v=!!v&&Store.mode==="cloud"; var was=state.poolOn; state.poolOn=v; var cb=document.getElementById("poolOn"); if(cb){ cb.checked=v; cb.disabled=Store.mode!=="cloud"; }
+    if(v&&!was){ poolSync(); poolLoad(); } if(!v&&was){ state.pool=[]; learnMemo={k:"",v:null}; render(); } });
+  document.getElementById("poolOn").onchange=function(){ var v=this.checked; if(Store.mode!=="cloud"){ this.checked=false; alertMsg("みんなの学習は、ログインしているときだけ使えます"); return; }
+    Store.savePoolOn(v).then(function(){ if(!v) Store.poolSave([]).catch(function(){}); }); };
+  var poolT=null; setInterval(function(){ if(state.poolOn) poolLoad(); },6*36e5);
   Store.on("sync",window.showSync=function(sy){ var el=document.getElementById("syncState"); if(!el) return; if(Store.mode!=="cloud"){ el.textContent=""; return; }
     var ks=["catches","trips"].filter(function(k){return sy[k];}); if(!ks.length){ el.textContent="アカウントを読み込み中…"; return; }
     var pend=ks.reduce(function(a,k){return a+sy[k].pending;},0), cache=ks.some(function(k){return sy[k].cache;}), n=ks.reduce(function(a,k){return a+sy[k].n;},0);
     var ob=sy.outbox||0; if(ob>pend) pend=ob;
     el.textContent=pend?"未送信 "+pend+"件(サーバーが受け取るまで端末に控えを残し、送り直します)":(cache?"サーバーにつながっていません(端末に保存した分を表示中)":"アカウントと同期済み(釣果・釣行 "+n+"件)"); });
   Store.on("syncError",function(m){ var el=document.getElementById("syncErr"); if(!el) return; el.hidden=!m; el.textContent=m||""; });
-  Store.on("trips",function(list){ state.trips=list; renderTrips(); render(); });
+  Store.on("trips",function(list){ state.trips=list; renderTrips(); render(); if(state.poolOn){ clearTimeout(window._poolT); window._poolT=setTimeout(poolSync,20000); } });
   document.getElementById("lgHere").onclick=useHere;
   document.getElementById("lgCam").onchange=function(){ onPhoto(this.files[0],true); };
   document.getElementById("lgPick").onchange=function(){ onPhoto(this.files[0],false); };
@@ -1504,8 +1651,10 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
       open(ll,z); }).catch(function(){ open(null); });
   };
   var ib=document.getElementById("impBtn"); if(ib) ib.onclick=importRecords;
-  Store.on("catches",function(list){ state.catches=list.slice().sort(function(a,b){return (b.at||"")>(a.at||"")?1:-1;}); render(); renderTripBar(); });
+  setTimeout(function(){ if(Store.mode==="cloud") shrinkOldPhotos(); },15000);
+  Store.on("catches",function(list){ state.catches=list.slice().sort(function(a,b){return (b.at||"")>(a.at||"")?1:-1;}); render(); renderTripBar(); if(state.poolOn){ clearTimeout(window._poolT); window._poolT=setTimeout(poolSync,20000); } });
   Store.on("pos",function(p){ state.pos=p||{}; render(); });
+  Store.on("pref",function(p){ state.pref=p||{}; condMemo={}; learnMemo={k:"",v:null}; unitMemo={k:"",v:[]}; render(); });
   Store.on("groups",function(g){ state.groups=g||[]; renderGroups(); render(); });
   Store.on("groupSpots",function(g){ state.groupSpots=g||{}; renderGroups(); render(); });
   var firstArea=true;

@@ -4,7 +4,7 @@
  * どちらも同じ関数で扱えるようにしている。 */
 var Store=(function(){
   var subs={}, mode="local", uid=null, userName="", fb=null, db=null, unsubs=[], groupUnsubs={};
-  var data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{},activeTrip:undefined};
+  var data={spots:{},catches:{},trips:{},pos:{},pref:{},area:null,groups:[],groupSpots:{},activeTrip:undefined};
   function emit(k){ (subs[k]||[]).forEach(function(f){ try{ f(get(k)); }catch(e){ console.error(e); } }); }
   function get(k){
     if(k==="syncError") return lastErr;
@@ -16,9 +16,9 @@ var Store=(function(){
   function lsGet(k,d){ try{ var v=JSON.parse(localStorage.getItem("en."+k)); return v==null?d:v; }catch(e){ return d; } }
   function lsSet(k,v){ try{ localStorage.setItem("en."+k,JSON.stringify(v)); }catch(e){} }
   function loadLocal(){
-    data.spots=lsGet("spots",{}); data.catches=lsGet("catches",{}); data.trips=lsGet("trips",{}); data.pos=lsGet("pos",{}); data.area=lsGet("area",null);
+    data.spots=lsGet("spots",{}); data.catches=lsGet("catches",{}); data.trips=lsGet("trips",{}); data.pos=lsGet("pos",{}); data.pref=lsGet("pref",{}); data.area=lsGet("area",null);
     data.groups=[]; data.groupSpots={};
-    ["spots","catches","trips","pos","area","groups","groupSpots"].forEach(emit);
+    ["spots","catches","trips","pos","pref","area","groups","groupSpots"].forEach(emit);
   }
   function newId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }
@@ -27,7 +27,7 @@ var Store=(function(){
   var lastErr=null, sync={};
   function syncErr(e){ var c=(e&&e.code)||"", m=String(e&&e.message||e);
     if(c==="unavailable"||/offline/i.test(m)) return;
-    var txt=c==="permission-denied"?"アカウントに保存できません(権限がありません)。Firebase の Firestore の「ルール」が貼られていないか、内容が違います。":
+    var txt=c==="resource-exhausted"?"Firebase の無料の容量か回数を超えたので、今は保存できません。記録はこの端末に控えてあり、空きができたら自動で送り直します。":c==="permission-denied"?"アカウントに保存できません(権限がありません)。Firebase の Firestore の「ルール」が貼られていないか、内容が違います。":
       (c==="not-found"||c==="failed-precondition"||/does not exist|NOT_FOUND/i.test(m))?"アカウントに保存できません。Firebase で「Firestore Database」がまだ作られていません。":
       "アカウントへの保存でエラーが出ました:"+(c||m);
     lastErr=txt; console.warn(txt,e); emit("syncError"); }
@@ -58,15 +58,15 @@ var Store=(function(){
   function u(){ return db.collection("users").doc(uid); }
   function startCloud(user){
     mode="cloud"; uid=user.uid; userName=user.displayName||"";
-    data={spots:{},catches:{},trips:{},pos:{},area:null,groups:[],groupSpots:{}};
+    data={spots:{},catches:{},trips:{},pos:{},pref:{},area:null,groups:[],groupSpots:{}};
     unsubs.forEach(function(f){f();}); unsubs=[];
     ["spots","catches","trips","pos","groups","groupSpots"].forEach(emit);
     function col(name,key){ unsubs.push(u().collection(name).onSnapshot({includeMetadataChanges:true},function(q){ var m={}, pend=0; q.forEach(function(d){ m[d.id]=d.data(); if(d.metadata.hasPendingWrites) pend++; });
       sync[key]={cache:q.metadata.fromCache,pending:pend,n:q.size,at:new Date(),outbox:obCount()}; emit("sync");
       if(!q.metadata.fromCache&&key==="catches") flushOutbox();
       var ch=JSON.stringify(Object.keys(m))!==JSON.stringify(Object.keys(data[key]||{}))||q.docChanges().length; data[key]=m; if(ch) emit(key); },function(e){ syncErr(e); })); }
-    col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos");
-    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ syncErr(e); }));
+    col("spots","spots"); col("catches","catches"); col("trips","trips"); col("spotpos","pos"); col("spotpref","pref");
+    unsubs.push(u().onSnapshot(function(d){ var x=d.exists?d.data():{}; data.area=x.area||null; data.groups=x.groups||[]; data.activeTrip=x.activeTrip||null; data.poolOn=!!x.poolOn; emit("poolOn"); emit("area"); emit("groups"); emit("activeTrip"); watchGroups(); },function(e){ syncErr(e); }));
     emit("auth");
     clearInterval(startCloud.t); startCloud.t=setInterval(flushOutbox,120000);
   }
@@ -120,6 +120,7 @@ var Store=(function(){
     if(cloudReady()){ data.groups.forEach(function(g){ db.collection("groups").doc(g.code).collection("spots").doc(uid+"_"+id).delete().catch(function(){}); });
       return u().collection("spots").doc(id).delete(); }
     putLocal("spots",id,null); return Promise.resolve(); }
+  function savePref(id,obj){ if(cloudReady()) return obj?cw("spotpref",id,clean(obj)):cw("spotpref",id,null,{del:true}); putLocal("pref",id,obj?clean(obj):null); return Promise.resolve(); }
   function savePos(id,ll){ if(cloudReady()) return cw("spotpos",id,ll); putLocal("pos",id,ll); return Promise.resolve(); }
   function addCatch(rec){ rec=clean(rec); var id=newId(); if(cloudReady()) return cw("catches",id,rec,{val:id}); putLocal("catches",id,rec); return Promise.resolve(id); }
   /* 写真:縮めた JPEG を、ログイン時は Firestore の photos に、ログインなしは端末の IndexedDB に入れる */
@@ -129,6 +130,8 @@ var Store=(function(){
     if(cloudReady()) return local.then(function(){ return fw(u().collection("photos").doc(id).set({img:dataUrl,at:new Date().toISOString()})); });
     return idb().then(function(d){ return new Promise(function(ok,ng){ var t=d.transaction("p","readwrite"); t.objectStore("p").put(dataUrl,id); t.oncomplete=function(){ok();}; t.onerror=function(){ng(t.error);}; }); });
   }
+  function deletePhoto(id){ var l=idb().then(function(d){ d.transaction("p","readwrite").objectStore("p").delete(id); }).catch(function(){});
+    if(cloudReady()) return fw(u().collection("photos").doc(id).delete()); return l; }
   function getPhoto(id){
     var fromIdb=function(){ return idb().then(function(d){ return new Promise(function(ok){ var q=d.transaction("p").objectStore("p").get(id); q.onsuccess=function(){ok(q.result||null);}; q.onerror=function(){ok(null);}; }); }).catch(function(){return null;}); };
     if(cloudReady()) return u().collection("photos").doc(id).get().then(function(d){ return d.exists?d.data().img:fromIdb(); }).catch(fromIdb);
@@ -140,6 +143,22 @@ var Store=(function(){
   function setCatch(id,rec){ rec=clean(rec); if(cloudReady()) return cw("catches",id,rec,{val:id}); putLocal("catches",id,rec); return Promise.resolve(id); }
   function deleteCatch(id){ if(cloudReady()) return cw("catches",id,null,{del:true}); putLocal("catches",id,null); return Promise.resolve(); }
   function saveActiveTrip(t){ if(cloudReady()) return fw(u().set({activeTrip:t||null},{merge:true})); return Promise.resolve(); }
+  /* みんなの学習:pool/{uid}_{キー} に、場所なしの釣行の条件と結果だけを置く */
+  function poolSave(units){
+    if(!cloudReady()) return Promise.resolve();
+    var col=db.collection("pool");
+    return col.where("u","==",uid).get().then(function(q){
+      var keep={}, b=db.batch(), n=0;
+      units.forEach(function(x){ var id=uid+"_"+String(x.k).replace(/[^\w-]/g,"").slice(0,80); keep[id]=1;
+        b.set(col.doc(id),{u:uid,m:String(x.m||""),f:(x.f||[]).map(String).slice(0,10),fc:x.fc||{},hr:x.hr==null?null:Number(x.hr),b:x.b||{},s:x.s==null?null:Number(x.s),mo:x.mo==null?null:Number(x.mo),ga:x.ga==null?null:Number(x.ga),go:x.go==null?null:Number(x.go)}); n++; });
+      q.forEach(function(d){ if(!keep[d.id]){ b.delete(d.ref); n++; } });
+      return n?b.commit():null; });
+  }
+  function poolLoad(){
+    if(!cloudReady()) return Promise.resolve([]);
+    return db.collection("pool").limit(5000).get().then(function(q){ var a=[]; q.forEach(function(d){ var x=d.data(); if(x.u!==uid) a.push(x); }); return a; });
+  }
+  function savePoolOn(v){ if(!cloudReady()) return Promise.resolve(); data.poolOn=!!v; emit("poolOn"); return fw(u().set({poolOn:!!v},{merge:true})); }
   function saveArea(a){ if(cloudReady()) return u().set({area:a},{merge:true}); data.area=a; lsSet("area",a); return Promise.resolve(); }
 
   /* --- 端末の記録をアカウントへ移す --- */
@@ -154,8 +173,9 @@ var Store=(function(){
     Object.keys(data.catches).forEach(function(id){ have[sig(data.catches[id])]=1; });
     Object.keys(c).forEach(function(id){ if(data.catches[id]||have[sig(c[id])]) return; have[sig(c[id])]=1; b.set(u().collection("catches").doc(id),c[id]); n++; });
     Object.keys(p).forEach(function(id){ b.set(u().collection("spotpos").doc(id),p[id]); n++; });
+    var pf=lsGet("pref",{}); Object.keys(pf).forEach(function(id){ b.set(u().collection("spotpref").doc(id),pf[id]); n++; });
     if(n>450) return Promise.reject(new Error("件数が多すぎます"));
-    return b.commit().then(function(){ ["spots","catches","trips","pos"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return migratePhotos(); }).then(function(){ return n; });
+    return b.commit().then(function(){ ["spots","catches","trips","pos","pref"].forEach(function(k){ try{ localStorage.removeItem("en."+k); }catch(e){} }); return migratePhotos(); }).then(function(){ return n; });
   }
   function migratePhotos(){
     return idb().then(function(d){ return new Promise(function(ok){ var st=d.transaction("p").objectStore("p"), ks=st.getAllKeys(), vs=st.getAll();
@@ -198,7 +218,7 @@ var Store=(function(){
   }
 
   return {init:init,on:on,get:get,signIn:signIn,signOut:signOut,
-    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,addCatch:addCatch,setCatch:setCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
+    saveSpot:saveSpot,deleteSpot:deleteSpot,savePos:savePos,savePref:savePref,addCatch:addCatch,poolSave:poolSave,poolLoad:poolLoad,savePoolOn:savePoolOn,setCatch:setCatch,saveActiveTrip:saveActiveTrip,addTrip:addTrip,deleteTrip:deleteTrip,savePhoto:savePhoto,deletePhoto:deletePhoto,getPhoto:getPhoto,updateCatch:updateCatch,deleteCatch:deleteCatch,saveArea:saveArea,
     localCounts:localCounts,migrateLocal:migrateLocal,createGroup:createGroup,joinGroup:joinGroup,leaveGroup:leaveGroup,shareSpot:shareSpot,
     get mode(){return mode;}, get uidShort(){return uid?uid.slice(0,6):"";}, get uid(){return uid;}, get userName(){return userName;}, get configured(){return !!fb;}};
 })();
