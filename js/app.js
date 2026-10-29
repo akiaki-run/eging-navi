@@ -255,7 +255,7 @@ function radarLayer(){
   lbl.onAdd=function(){ var w=L.DomUtil.create("div","maplegend radarleg"); w.innerHTML='<div id="radarTime"></div><div class="rscale"><i style="background:#a0d2ff"></i>1<i style="background:#218cff"></i>5<i style="background:#0041ff"></i>10<i style="background:#fff500"></i>20<i style="background:#ff9900"></i>30<i style="background:#ff2800"></i>50<i style="background:#b40068"></i>80<small>mm/時</small></div>'; return w; };
   function setLbl(t){ var el=document.getElementById("radarTime"); if(el) el.textContent=t; }
   function jt(v){ return Date.UTC(+v.slice(0,4),+v.slice(4,6)-1,+v.slice(6,8),+v.slice(8,10),+v.slice(10,12)); }
-  function load(){
+  function load(){ if(!frames.length) setLbl("雨雲を読み込み中…");
     var j1=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json").then(function(r){ if(!r.ok) throw 0; return r.json(); });
     var j2=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json").then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; });
     Promise.all([j1,j2]).then(function(a){ src="jma";
@@ -1593,6 +1593,10 @@ areaChanged=function(fit){ _areaChanged(fit); scheduleConditions(); scheduleBeac
 Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fetch("data/places.json").then(function(r){return r.json();})]).then(function(r){
   OVERVIEW=r[0]; PLACES=r[1];
   initMap(); render(); scheduleAuto(); loadConditions(); loadBeaches();
+  /* 開いている間は30分ごとに天気を取り直す。別のアプリから戻ってきたときも、30分たっていれば取り直す */
+  var lastRefresh=Date.now(); function refreshWx(){ lastRefresh=Date.now(); loadConditions(); condMemo={}; state.wxVer=(state.wxVer||0)+1; render(); }
+  setInterval(function(){ if(!document.hidden) refreshWx(); },30*60000);
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden&&Date.now()-lastRefresh>30*60000) refreshWx(); });
   if("serviceWorker" in navigator&&location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(function(e){ console.warn(e); });
   Store.on("auth",function(){ renderAuth(); renderGroups(); render(); });
   Store.on("spots",function(list){ state.mine=list.map(function(x){ var o=Object.assign({eging:2,shelter:1,current:"normal"},x,{mine:true}); if(x.open&&!openCache[okey(o)]&&!geoReady(o.lat,o.lng)) openCache[okey(o)]=x.open; return o; });
@@ -1601,6 +1605,11 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   document.getElementById("pastBtn").onclick=openPast;
   (function(){ var r=document.getElementById("mtRange"), tt=null;
     r.oninput=function(){ var now=Math.floor(Date.now()/36e5)*36e5; mapTime.t=now+(+r.value)*36e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,250); };
+    function stepT(min){ var t=mapT()+min*60000, now=Date.now(), lo=now-3*36e5, hi=Math.floor(now/36e5)*36e5+(+r.max)*36e5; mapTime.t=Math.max(lo,Math.min(hi,t)); mapTime.follow=false; mapTimeChanged(); }
+    /* 雨雲が見られる時間(少し前〜1時間先)の中では10分ずつ、それ以外は1時間ずつ動かす */
+    function stepSize(dir){ var t=mapT(), now=Date.now(), rad=map&&radarRef&&map.hasLayer(radarRef); return (rad&&t+dir*600000>=now-3*36e5&&t+dir*600000<=now+65*60000)?10:60; }
+    document.getElementById("mtPrev").onclick=function(){ stepT(-stepSize(-1)); };
+    document.getElementById("mtNext").onclick=function(){ stepT(stepSize(1)); };
     document.getElementById("mtNow").onclick=function(){ mapTime.t=Date.now(); mapTime.follow=false; mapTimeChanged(); };
     document.getElementById("mtSlot").onclick=function(){ mapTime.follow=true; mapTimeChanged(); }; })();
   document.getElementById("pastBtn2").onclick=openPast;

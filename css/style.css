@@ -264,3 +264,7 @@ body.recOpen{overflow:hidden}
 .pooltbl{width:100%;border-collapse:collapse;font-size:.85rem}.pooltbl th{text-align:left;white-space:nowrap;vertical-align:top;padding:4px 8px 4px 0;color:var(--sub);font-weight:600}
 .pooltbl td{padding:4px 0;border-bottom:1px solid var(--line)}.pooltbl small{color:var(--sub);margin-right:4px}
 .castpref{font-size:.8rem;color:var(--sub);display:inline-flex;gap:4px;align-items:center;margin-top:4px}.castpref select{font:inherit;font-size:.85rem;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
+.maptime .mtrow{margin:2px 0}.maptime .mtstep{min-width:44px;min-height:40px;font-size:1rem;padding:0 10px}
+.maptime input[type=range]{flex:1;height:36px;margin:0 6px;accent-color:var(--buoy)}
+.maptime input[type=range]::-webkit-slider-thumb{width:28px;height:28px}
+.maptime input[type=range]::-moz-range-thumb{width:28px;height:28px}
