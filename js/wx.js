@@ -13,8 +13,8 @@ var Wx=(function(){
     if(c&&(Date.now()-c.at<30*60*1000)) return c.p;
     var la=lat.toFixed(3), lo=lng.toFixed(3);
     var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+
-      "&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=sunrise,sunset&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=16");
-    var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height&timezone=Asia%2FTokyo&forecast_days=16").catch(function(){ return null; });
+      "&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&daily=sunrise,sunset&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=6");
+    var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height&timezone=Asia%2FTokyo&forecast_days=6").catch(function(){ return null; });
     var p=Promise.all([f,m]).then(function(r){
       var w=r[0], mar=r[1], days={};
       w.hourly.time.forEach(function(t,i){
@@ -84,8 +84,8 @@ var Wx=(function(){
     var chunks=[]; for(var i=0;i<need.length;i+=50) chunks.push(need.slice(i,i+50));
     var all=Promise.all(chunks.map(function(ch){
       var la=ch.map(function(k){return k.split(",")[0];}).join(","), lo=ch.map(function(k){return k.split(",")[1];}).join(",");
-      var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=16&past_days=3");
-      var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height,sea_surface_temperature&timezone=Asia%2FTokyo&forecast_days=16&past_days=3").catch(function(){ return null; });
+      var f=fetchJson("https://api.open-meteo.com/v1/forecast?latitude="+la+"&longitude="+lo+"&hourly=weather_code,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=6&past_days=3");
+      var m=fetchJson("https://marine-api.open-meteo.com/v1/marine?latitude="+la+"&longitude="+lo+"&hourly=wave_height,sea_surface_temperature&timezone=Asia%2FTokyo&forecast_days=6&past_days=3").catch(function(){ return null; });
       return Promise.all([f,m]).then(function(r){
         var ws=Array.isArray(r[0])?r[0]:[r[0]], ms=r[1]?(Array.isArray(r[1])?r[1]:[r[1]]):[];
         ch.forEach(function(k,i){ if(ws[i]&&ws[i].hourly) cellCache[k]={at:Date.now(),days:parseOne(ws[i],ms[i])}; });
