@@ -244,8 +244,9 @@ function jstKH(ms){ var d=new Date(ms+9*36e5); return {key:d.toISOString().slice
 function fmtJst(ms){ var d=new Date(ms+9*36e5); return (d.getUTCMonth()+1)+"/"+d.getUTCDate()+"("+"日月火水木金土"[d.getUTCDay()]+") "+String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0"); }
 function mapTimeChanged(){ mapTime.subs.forEach(function(f){ try{ f(); }catch(e){ console.warn(e); } }); renderMapTime(); }
 function renderMapTime(){ var box=document.getElementById("mapTime"); if(!box) return; var on=map&&(map.hasLayer(radarRef||{})||map.hasLayer(window.windLayerRef||{}));
-  box.hidden=!on; if(!on) return; var now=Math.floor(Date.now()/36e5)*36e5, t=mapT(), r=document.getElementById("mtRange");
-  r.min=-3; r.max=Math.min((MAXDAY+1)*24-1,(state.offset+2)*24); r.value=Math.round((t-now)/36e5);
+  box.hidden=!on; if(!on) return; var now=Math.floor(Date.now()/6e5)*6e5, t=mapT(), r=document.getElementById("mtRange");
+  /* バーは10分きざみ。値は「今から何10分後か」 */
+  r.min=-18; r.max=Math.min((MAXDAY+1)*24-1,(state.offset+2)*24)*6; r.value=Math.round((t-now)/6e5);
   document.getElementById("mtLabel").textContent=(Math.abs(t-Date.now())<36e5*0.5?"今 ":"")+fmtJst(t)+(mapTime.follow?"(選んだ時間帯)":""); }
 var radarRef=null;
 /* ===== 雨雲レーダー:気象庁の降水ナウキャスト(高解像度)。取れなければ RainViewer ===== */
@@ -1613,8 +1614,8 @@ Promise.all([fetch("data/overview.json").then(function(r){return r.json();}),fet
   var cb=document.getElementById("lgDirMap"); if(cb) cb.onclick=function(){ var s=curLogSpot(); if(!s){ document.getElementById("lgMsg").textContent="先に場所を選んでください。"; return; } document.getElementById("logSheet").hidden=true; startCast({sheet:true,phase:"dir",from:{lat:s.lat,lng:s.lng}}); };
   document.getElementById("pastBtn").onclick=openPast;
   (function(){ var r=document.getElementById("mtRange"), tt=null;
-    r.oninput=function(){ var now=Math.floor(Date.now()/36e5)*36e5; mapTime.t=now+(+r.value)*36e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,250); };
-    function stepT(min){ var t=mapT()+min*60000, now=Date.now(), lo=now-3*36e5, hi=Math.floor(now/36e5)*36e5+(+r.max)*36e5; mapTime.t=Math.max(lo,Math.min(hi,t)); mapTime.follow=false; mapTimeChanged(); }
+    r.oninput=function(){ var now=Math.floor(Date.now()/6e5)*6e5; mapTime.t=now+(+r.value)*6e5; mapTime.follow=false; renderMapTime(); clearTimeout(tt); tt=setTimeout(mapTimeChanged,150); };
+    function stepT(min){ var t=mapT()+min*60000, now=Date.now(), lo=now-3*36e5, hi=Math.floor(now/6e5)*6e5+(+r.max)*6e5; mapTime.t=Math.max(lo,Math.min(hi,t)); mapTime.follow=false; mapTimeChanged(); }
     /* 雨雲が見られる時間(少し前〜1時間先)の中では10分ずつ、それ以外は1時間ずつ動かす */
     function stepSize(dir){ var t=mapT(), now=Date.now(), rad=map&&radarRef&&map.hasLayer(radarRef); return (rad&&t+dir*600000>=now-3*36e5&&t+dir*600000<=now+65*60000)?10:60; }
     document.getElementById("mtPrev").onclick=function(){ stepT(-stepSize(-1)); };
