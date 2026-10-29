@@ -261,8 +261,12 @@ function radarLayer(){
   function load(){ if(!frames.length) setLbl("雨雲を読み込み中…");
     var j1=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json").then(function(r){ if(!r.ok) throw 0; return r.json(); });
     var j2=fetch("https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json").then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; });
-    Promise.all([j1,j2]).then(function(a){ src="jma";
-      frames=a[0].concat(a[1]).filter(function(x){ return !x.elements||x.elements.indexOf("hrpns")>=0; }).map(function(x){ return {t:jt(x.validtime),u:"https://www.jma.go.jp/bosai/jmatile/data/nowc/"+x.basetime+"/none/"+x.validtime+"/surf/hrpns/{z}/{x}/{y}.png"}; });
+    /* 15時間先までは、気象庁の「今後の雨(降水短時間予報)」もつなぐ */
+    var j3=fetch("https://www.jma.go.jp/bosai/jmatile/data/rasrf/targetTimes.json").then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; });
+    Promise.all([j1,j2,j3]).then(function(a){ src="jma";
+      frames=a[0].concat(a[1]).filter(function(x){ return !x.elements||x.elements.indexOf("hrpns")>=0; }).map(function(x){ return {t:jt(x.validtime),u:"https://www.jma.go.jp/bosai/jmatile/data/nowc/"+x.basetime+"/"+(x.member||"none")+"/"+x.validtime+"/surf/hrpns/{z}/{x}/{y}.png"}; });
+      var last=frames.reduce(function(m,f){ return Math.max(m,f.t); },0);
+      (a[2]||[]).filter(function(x){ return !x.elements||x.elements.indexOf("rasrf")>=0; }).forEach(function(x){ var t=jt(x.validtime); if(t>last+5*60000) frames.push({t:t,rasrf:true,u:"https://www.jma.go.jp/bosai/jmatile/data/rasrf/"+x.basetime+"/"+(x.member||"none")+"/"+x.validtime+"/surf/rasrf/{z}/{x}/{y}.png"}); });
       pick(); }).catch(function(){
       fetch("https://api.rainviewer.com/public/weather-maps.json").then(function(r){ return r.json(); }).then(function(j){ src="rv";
         frames=j.radar.past.concat(j.radar.nowcast||[]).map(function(f){ return {t:f.time*1000,u:j.host+f.path+"/256/{z}/{x}/{y}/2/1_1.png"}; }); pick();
@@ -280,14 +284,28 @@ function radarLayer(){
   function pick(){ if(!frames.length||!map||!map.hasLayer(g)) return; var t=mapT(), bi=0;
     frames.sort(function(a,b){return a.t-b.t;}); frames.forEach(function(f,i){ if(Math.abs(f.t-t)<Math.abs(frames[bi].t-t)) bi=i; }); var best=frames[bi];
     var lo=frames[0].t, hi=frames[frames.length-1].t;
-    if(Math.abs(best.t-t)>40*60000){ Object.keys(layers).forEach(function(u){ layers[u].setOpacity(0); }); shownU=""; setLbl("雨雲は "+fmtJst(lo).split(" ")[1]+"〜"+fmtJst(hi).split(" ")[1]+" の分だけ見られます(バーを近づけてください)"); return; }
+    var tol=best.rasrf?40*60000:20*60000;
+    if(Math.abs(best.t-t)>tol){ Object.keys(layers).forEach(function(u){ layers[u].setOpacity(0); }); shownU=""; drawRainGrid(t); return; }
+    rainGrid.clearLayers();
     var cur=layerFor(best); Object.keys(layers).forEach(function(u){ layers[u].setOpacity(u===best.u?0.9:0); }); shownU=best.u;
     [bi-1,bi+1,bi-2,bi+2].forEach(function(k){ if(frames[k]) layerFor(frames[k]); });
-    setLbl("雨雲 "+fmtJst(best.t)+(best.t>Date.now()+5*60000?"(予測)":"")+(src==="jma"?"(気象庁)":"")); }
+    setLbl("雨雲 "+fmtJst(best.t)+(best.rasrf?"(気象庁の降水短時間予報)":(best.t>Date.now()+5*60000?"(予測・気象庁)":(src==="jma"?"(気象庁)":"")))); }
+  /* 気象庁の雨雲が無い時刻は、天気予報の1時間の雨の量を格子の色で出す */
+  var rainGrid=L.layerGroup(), rgSeq=0;
+  function rainColor(mm){ return mm>=80?"#b40068":mm>=50?"#ff2800":mm>=30?"#ff9900":mm>=20?"#fff500":mm>=10?"#0041ff":mm>=5?"#218cff":mm>=1?"#a0d2ff":(mm>=0.3?"#d8ecff":null); }
+  function drawRainGrid(t){ if(!map||!map.hasLayer(g)) return; if(!g.hasLayer(rainGrid)) g.addLayer(rainGrid); var my=++rgSeq, b=map.getBounds(), n=map.getSize().x<500?8:11, pts=[], dLa=(b.getNorth()-b.getSouth())/n, dLo=(b.getEast()-b.getWest())/n;
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++) pts.push({lat:b.getSouth()+dLa*(i+0.5),lng:b.getWest()+dLo*(j+0.5)});
+    setLbl("雨の予報を読み込み中…");
+    Wx.forecastCells(pts).then(function(){ if(my!==rgSeq) return; rainGrid.clearLayers(); var kh=jstKH(t), any=false;
+      pts.forEach(function(p){ var dd=Wx.cellDays(p.lat,p.lng), d=dd&&dd[kh.key], mm=d&&d.rain?d.rain[kh.h]:null; if(mm==null) return; any=true; var col=rainColor(mm); if(!col) return;
+        rainGrid.addLayer(L.rectangle([[p.lat-dLa/2,p.lng-dLo/2],[p.lat+dLa/2,p.lng+dLo/2]],{stroke:false,fillColor:col,fillOpacity:0.6,interactive:false})); });
+      setLbl(any?"雨の予報 "+fmtJst(t)+"(天気予報の1時間の雨の量。気象庁の雨雲より粗い)":"この時刻の雨の予報はありません"); }); }
+  map&&map.on&&0;
   function dim(on){ map.eachLayer(function(l){ if(l instanceof L.TileLayer&&!(l.options.className||"").match(/radartiles/)){ if(l.options.baseOpacity==null) l.options.baseOpacity=l.options.opacity==null?1:l.options.opacity; l.setOpacity(on?l.options.baseOpacity*0.55:l.options.baseOpacity); } }); }
-  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); dim(true); m.on("baselayerchange",dimOn); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
+  g.onAdd=function(m){ L.LayerGroup.prototype.onAdd.call(g,m); m.on("moveend",rgMove); dim(true); m.on("baselayerchange",dimOn); lbl.addTo(m); load(); timer=setInterval(load,5*60000); setTimeout(renderMapTime,0); };
   function dimOn(){ setTimeout(function(){ dim(true); },0); }
-  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); dim(false); m.off("baselayerchange",dimOn); lbl.remove(); clearInterval(timer); Object.keys(layers).forEach(function(u){ g.removeLayer(layers[u]); }); layers={}; order=[]; shownU=""; setTimeout(renderMapTime,0); };
+  var rgT=null; function rgMove(){ clearTimeout(rgT); rgT=setTimeout(function(){ if(!shownU) drawRainGrid(mapT()); },400); }
+  g.onRemove=function(m){ L.LayerGroup.prototype.onRemove.call(g,m); m.off("moveend",rgMove); rainGrid.clearLayers(); dim(false); m.off("baselayerchange",dimOn); lbl.remove(); clearInterval(timer); Object.keys(layers).forEach(function(u){ g.removeLayer(layers[u]); }); layers={}; order=[]; shownU=""; setTimeout(renderMapTime,0); };
   mapTime.subs.push(pick); radarRef=g;
   return g;
 }
