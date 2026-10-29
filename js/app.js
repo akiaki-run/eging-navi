@@ -371,13 +371,15 @@ function drawPins(ranked){
     var n=rankOf[s.id], z=map.getZoom();
     if(!n&&z<11) return;
     if(n>10&&z<12) return;
-    if(n>10){ var dot=L.circleMarker([s.lat,s.lng],{radius:4,color:css("--card"),weight:1,fillColor:s.auto?css("--sea"):css("--buoy"),fillOpacity:0.9}); dot.bindTooltip(esc(s.name)); dot.on("click",function(e){if(state.castEdit){castTap({lat:e.latlng.lat,lng:e.latlng.lng});return;} spotPopup(s);}); spotLayer.addLayer(dot); return; }
+    var small=!n||n>10;
+    if(n>10){ var dcls="pin out dotr"+(s.auto?" auto":"")+(s.mine?" mine":""), dm=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="hit"><div class="'+dcls+'"></div></div>',iconSize:[32,32],iconAnchor:[16,16]}),keyboard:false});
+      dm.bindTooltip(esc(s.name),{direction:"top",offset:[0,-8]}); dm.on("click",function(e){if(state.castEdit){castTap({lat:s.lat,lng:s.lng});return;} spotPopup(s);}); spotLayer.addLayer(dm); return; }
     var cls="pin"+(n?(n===1?" top":""):" out")+(s.mine?" mine":"")+(s.auto?" auto":"")+(s.shared?" shared":"");
-    var sz=n?(n===1?34:26):12;
-    var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:'<div class="'+cls+'">'+(n||"")+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
+    var sz=n?(n===1?34:26):32; /* 小さい点も指で押せるよう、見た目より広い範囲で押せるようにする */
+    var m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:"",html:n?'<div class="'+cls+'">'+n+'</div>':'<div class="hit"><div class="'+cls+'"></div></div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]}),keyboard:false,zIndexOffset:n?(500-n):0});
     var showName=n&&(n<=3||map.getZoom()>=12);
     var short=s.auto?s.name.replace(/\(.*\)$/,"").replace(/^.*?[市郡]/,"").replace(/^[^の]*?町(?=[^の])/,""):s.name; if(/^の/.test(short)) short=short.slice(1);
-    m.bindTooltip(esc(showName?short:s.name),showName?{permanent:true,direction:"right",offset:[sz/2,0],className:"pinlabel"}:{direction:"top",offset:[0,-sz/2]});
+    m.bindTooltip(esc(showName?short:s.name),showName?{permanent:true,direction:"right",offset:[sz/2,0],className:"pinlabel"}:{direction:"top",offset:[0,n?-sz/2:-8]});
     m.on("click",function(e){if(state.castEdit){castTap({lat:s.lat,lng:s.lng});return;} spotPopup(s);});
     spotLayer.addLayer(m);
   });

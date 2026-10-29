@@ -237,3 +237,5 @@ body.recOpen{overflow:hidden}
 .maplegend .lgtoggle{font:inherit;font-size:11px;font-weight:700;border:none;background:none;color:var(--ink);padding:0;cursor:pointer;text-align:left}
 .maplegend .lgtoggle::after{content:" ▾"}.maplegend.folded .lgtoggle::after{content:" ▸"}
 .maplegend.folded span{display:none!important}
+.hit{width:32px;height:32px;display:grid;place-items:center;cursor:pointer}
+.pin.dotr{width:10px;height:10px;background:var(--buoy);border:1.5px solid var(--card)}.pin.dotr.auto{background:var(--sea)}
