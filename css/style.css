@@ -268,3 +268,9 @@ body.recOpen{overflow:hidden}
 .maptime input[type=range]{flex:1;height:36px;margin:0 6px;accent-color:var(--buoy)}
 .maptime input[type=range]::-webkit-slider-thumb{width:28px;height:28px}
 .maptime input[type=range]::-moz-range-thumb{width:28px;height:28px}
+.castside{font-size:.85rem;margin-top:4px}
+.depthbox{border:1px dashed var(--line);border-radius:10px;padding:8px}.depthbox .dbrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.depthbox label{font-size:.78rem;color:var(--sub);display:flex;flex-direction:column;gap:2px}.depthbox label.ck{flex-direction:row;align-items:center;gap:4px;font-size:.85rem;color:var(--ink)}
+.depthbox input[type=number]{width:6em}
+.pts{font-size:.85rem;font-weight:700;color:var(--buoy);margin-left:6px;white-space:nowrap}.pts.low{color:var(--sub)}
+.row .barw{display:flex;flex-direction:column;align-items:flex-end;gap:2px}.row .barw .ptn{font-size:.8rem;color:var(--ink);font-weight:700}

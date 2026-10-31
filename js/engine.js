@@ -194,6 +194,9 @@ function moonBucket(age){ if(age==null) return null; var il=(1-Math.cos(2*Math.P
 /* 風とその場所の関係(海の開き方と風向きから)・川の近さ。地域の中での違いを学習するための区分 */
 function shelterBucket(open,wind_dir,ws){ if(!open||ws==null||ws<3) return null; var i=DIRS16.indexOf(wind_dir); if(i<0) return null; var fw=open[i]; return fw>=1.5?"風を正面から受ける場所":(fw>=0.3?"横風の場所":"風裏の場所"); }
 /* 場所の開け具合:海が1.5km以上開いている向きの数で、閉じた海(湾内・港内)・半分・外海に分ける */
+/* 海底の好み(記録から分かった海底に足し引き)。釣り方ごと、狙う魚があればその魚 */
+var BOTTOM_PREF={eging:{weed:3,clean:-1},"アオリイカ":{weed:3,clean:-1},"コウイカ":{clean:3,snag:-1},aji:{},mebaru:{weed:2,snag:2},jig:{},chinu:{snag:1},seabass:{},kisu:{clean:4,snag:-3},hata:{snag:3},negyo:{snag:3}};
+function bottomBucket(b){ return !b?null:(b.weed?"藻場がある場所":(b.snag?"根がある場所":(b.clean?"砂泥の場所":null))); }
 function enclosureBucket(open){ if(!open) return null; var n=0; for(var i=0;i<16;i++) if(open[i]>=1.5) n++; return n<=2?"閉じた海(湾内・港内)":(n<=6?"半分開けた海":"外海に開けた場所"); }
 /* 場所の種類 × その日の条件 の組み合わせ(「風が強い日の湾内」など) */
 function comboBuckets(enc,kind,b){ function j(a,c){ return a&&c?a+"で"+c:null; } var k=kind?kind.replace("地形:",""):null;
@@ -270,22 +273,37 @@ function rankGeneric(c,s,center,radiusKm){
     else if(fw<0&&eff>=10){ var bo=eff>80?-2:Math.round(Math.min(4,(eff-5)/5)*(-fw)*(0.5+0.5*rf)*10)/10; sc+=bo;
       if(bo>0) why.push(rtxt+"で濁りが入り、警戒心が薄れやすい"+(near?"(近くに川がある)":"")); else warn.push(rtxt+"。濁りが強すぎる"); }
   }
+  if(s.bottom){ var bp=BOTTOM_PREF[c.target]||BOTTOM_PREF[c.method||"eging"]||{}, bn={weed:"海藻が付く(藻場がある)",snag:"根掛かりする(岩や根がある)",clean:"何も付かない(砂泥)"};
+    ["weed","snag","clean"].forEach(function(f){ if(s.bottom[f]&&bp[f]){ sc+=bp[f]; (bp[f]>0?why:warn).push("記録から:"+bn[f]+"場所で、"+(c.target||m.name)+"に"+(bp[f]>0?"向いている":"あまり向かない")); } });
+    if(s.bottom.foot!=null&&s.bottom.foot<1&&(m===METHODS.eging||m===METHODS.jig)){ sc-=2; warn.push("記録から:潮が引くと足元が"+Math.max(0,s.bottom.foot).toFixed(1)+"mくらいまで浅くなる"); } }
   if(c.learn){ var B=learnBuckets(Object.assign({},c,{spot_kind:k})); B.shelter=shelterBucket(s._open,c.wind_dir,c.wind_ms); B.river=riverBucket(c.river_km);
+    B.bottom=bottomBucket(s.bottom);
     B.enc=s._cast==="inner"?"閉じた海(湾内・港内)":(s._cast==="outer"?"外海に開けた場所":enclosureBucket(s._open)); var CB=comboBuckets(B.enc,B.kind,B); Object.keys(CB).forEach(function(x){ B[x]=CB[x]; });
-    ["rain","tide","wind","kind","temp","rough","shelter","river","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind"].forEach(function(f){ var b=B[f], a=b&&c.learn[f]&&c.learn[f][b]; if(!a||Math.abs(a)<1) return; sc+=a;
+    ["rain","tide","wind","kind","temp","rough","shelter","river","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind","bottom"].forEach(function(f){ var b=B[f], a=b&&c.learn[f]&&c.learn[f][b]; if(!a||Math.abs(a)<1) return; sc+=a;
       (a>0?why:warn).push("記録から:"+(f==="kind"?b.replace("地形:","")+"では":(/^(encwind|encwave|enctide|kindwind)$/.test(f)?"「"+b.replace(/で(.+)$/,"」で「$1")+"」日は":(f==="enc"?"「"+b+"」では":(f==="shelter"||f==="river"?"今日のこの場所のように「"+b+"」では":(f==="season"||f==="day"?b+"は":(f==="wave"||f==="pres"||f==="sstt"?"「"+b+"」ときは":b+"の日は"))))))+(a>0?"よく釣れている":"釣れにくい")+"("+(a>0?"+":"")+a+")"); }); }
   if(s.ferry) warn.push("フェリーの時刻を確認");
   return {spot:s,score:sc,dist:dk,why:why,warn:warn,kind:k};
 }
 function howFor(c,s){ var m=methodOf(c); if(m===METHODS.eging&&s.how) return s.how; var k=spotKind(s); if(!k){ var g=classify(s._open||s.open); k=g?g.type:""; } return m.how[k]||m.how["default"]; }
 
+/* 全体で見た点数(0〜100ポイント)。100 = その釣り方(狙う魚)にとって、場所・水温・潮・風が全部いちばん良いとき。
+ * 0 = 全部悪いとき。範囲の中の順位とは別に、「今日このあたり自体が良いか」が分かる */
+function scoreRange(c){
+  var m=methodOf(c), spc=speciesOf(c.target), ks=Object.keys(m.kind).map(function(k){ return m.kind[k]+((spc&&spc.kind&&spc.kind[k])||0); });
+  var kMax=Math.max.apply(null,ks), kMin=Math.min.apply(null,ks);
+  var tide={strong:6,move:4,gentle:3,rising:3}[m.tide]||4; tide=Math.max(tide,5);
+  var bp=BOTTOM_PREF[c.target]||BOTTOM_PREF[c.method||"eging"]||{}, bMax=Math.max(0,Math.max.apply(null,[0].concat(Object.keys(bp).map(function(k){return bp[k];}))));
+  var max=20+kMax+6+tide+3+(m.rainBonus?2:0)+bMax, floor=20+kMin-12;
+  return {max:max,floor:floor};
+}
+function toPoints(score,c){ var r=scoreRange(c||{}); return Math.max(0,Math.min(100,Math.round((score-r.floor)/(r.max-r.floor)*100))); }
 /* 円の中のポイントに点数と理由を付ける。spots は円の中だけを渡す */
 function rankSpots(base,spots,center,radiusKm){
   var out=spots.map(function(s){
     var c=base.condFor?base.condFor(s):base;
     return rankGeneric(c,s,center,radiusKm);
   });
-  out.forEach(function(r){ r.score=Math.round(r.score*10)/10; });
+  out.forEach(function(r){ r.score=Math.round(r.score*10)/10; r.points=toPoints(r.score,base.condFor?base.condFor(r.spot):base); });
   out.sort(function(a,b){ return b.score-a.score||(a.spot.id<b.spot.id?-1:1); });
   return out;
 }
@@ -389,4 +407,4 @@ function castAdvice(open,c,spot){
   return {best:best,lo:lo,hi:hi,rel:r,alt:alt,kind:kind(best),text:text};
 }
 
-if(typeof module!=="undefined") module.exports={enclosureBucket:enclosureBucket,comboBuckets:comboBuckets,shelterBucket:shelterBucket,riverBucket:riverBucket,timeBucket:timeBucket,moonBucket:moonBucket,targetHit:targetHit,speciesOf:speciesOf,learnBuckets:learnBuckets,rainEff:rainEff,classify:classify,isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};
+if(typeof module!=="undefined") module.exports={toPoints:toPoints,scoreRange:scoreRange,enclosureBucket:enclosureBucket,comboBuckets:comboBuckets,shelterBucket:shelterBucket,riverBucket:riverBucket,timeBucket:timeBucket,moonBucket:moonBucket,targetHit:targetHit,speciesOf:speciesOf,learnBuckets:learnBuckets,rainEff:rainEff,classify:classify,isSandy:isSandy,METHODS:METHODS,FISH_ALL:FISH_ALL,howFor:howFor,fishHit:fishHit,SPOTS:SPOTS,rankSpots:rankSpots,bestWindows:bestWindows,tideCurve:tideCurve,distKm:distKm,pickArea:pickArea,h2hm:h2hm,castAdvice:castAdvice};

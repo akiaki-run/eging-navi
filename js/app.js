@@ -88,7 +88,8 @@ function ownUnits(){
       u=day[dk]; if(!u){ u=day[dk]=mk1("c"+dk.replace(/[^\w]/g,""),x.method||"eging",x.cond,tm(x.at,x.lat,x.lng),kindAt(x),x); units.push(u); } }
     fish.forEach(function(f){ if(u.fish.indexOf(f)<0) u.fish.push(f); });
     its.forEach(function(it){ u.fc[it.kind]=(u.fc[it.kind]||0)+it.count; });
-    if(x.water&&!u.b.water) u.b.water=x.water==="inner"?"港内・湾内に投げた":"外海側に投げた"; });
+    if(x.water&&!u.b.water) u.b.water=x.water==="inner"?"港内・湾内に投げた":"外海側に投げた";
+    if(x.bottom&&!u.b.bottom) u.b.bottom=x.bottom.weed?"藻場がある場所":(x.bottom.snag?"根がある場所":(x.bottom.clean?"砂泥の場所":null)); });
   units.forEach(function(u){ var cb=comboBuckets(u.b.enc,u.b.kind,u.b); Object.keys(cb).forEach(function(x){ u.b[x]=cb[x]; }); });
   units=units.filter(function(u){ return !(u.short&&!u.fish.length); });
   unitMemo={k:mk,v:units}; return units;
@@ -111,7 +112,7 @@ function computeLearn(){
   var n=units.length, hits=units.filter(function(x){return x.hit;}).length, out=null;
   function bucket(x,f){ if(f==="temp"){ var v=x.u.sst; if(v==null||!tr) return null; return (v>=tr[0]&&v<=tr[1])?"適水温":(v<tr[0]?"水温が低め":"水温が高め"); } return x.u.b[f]||null; }
   if(n>=8&&hits<n&&hits>0){ var W=units.reduce(function(a,x){return a+x.w;},0), WH=units.reduce(function(a,x){return a+(x.hit?x.w:0);},0), p0=WH/W, K=6, y0=units.reduce(function(a,x){return a+x.y*x.w;},0)/W; out={n:n,own:nOwn,pool:n-nOwn};
-    ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind"].forEach(function(f){ var g={};
+    ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind","bottom"].forEach(function(f){ var g={};
       units.forEach(function(x){ var b=bucket(x,f); if(!b) return; var o=g[b]=g[b]||{n:0,h:0,y:0}; o.n+=x.w; if(x.hit) o.h+=x.w; o.y+=x.y*x.w; });
       /* 「釣れた割合」と「釣れた数」の両方を全体と比べる(回数が少ない区分は全体の値に寄せる) */
       out[f]={}; Object.keys(g).forEach(function(b){ var o=g[b], pb=(o.h+p0*K)/(o.n+K), yb=(o.y+y0*K)/(o.n+K), ha=(pb-p0)*20, ca=y0>0?(yb-y0)/y0*6:0;
@@ -120,7 +121,7 @@ function computeLearn(){
 }
 /* ===== みんなの学習:参加している人の「釣行1回分の条件と結果」を出し合う ===== */
 /* みんなの記録のまとめ(参加している人の、場所なしの条件と結果) */
-var FACTOR_NAME={enc:"場所の開け具合",encwind:"開け具合×風",encwave:"開け具合×波",enctide:"開け具合×潮",kindwind:"地形×風",season:"季節",day:"平日・土日",wave:"波",pres:"気圧の変化",sstt:"水温の変化",rain:"前の雨",tide:"潮の大きさ",phase:"潮の上げ下げ",wind:"風の強さ",shelter:"風と場所の関係",river:"川の近さ",kind:"地形",temp:"水温",rough:"時化",time:"時間帯",moon:"夜の月明かり",water:"投げた先"};
+var FACTOR_NAME={bottom:"海底",enc:"場所の開け具合",encwind:"開け具合×風",encwave:"開け具合×波",enctide:"開け具合×潮",kindwind:"地形×風",season:"季節",day:"平日・土日",wave:"波",pres:"気圧の変化",sstt:"水温の変化",rain:"前の雨",tide:"潮の大きさ",phase:"潮の上げ下げ",wind:"風の強さ",shelter:"風と場所の関係",river:"川の近さ",kind:"地形",temp:"水温",rough:"時化",time:"時間帯",moon:"夜の月明かり",water:"投げた先"};
 function renderPool(){
   var el=document.getElementById("poolSum"); if(!el) return;
   if(!state.poolOn){ el.innerHTML=""; return; }
@@ -495,9 +496,16 @@ function castBlock(s,c){
   var o=openCache[okey(s)];
   if(!o) return '<div class="cast"><div class="castTxt" style="color:var(--sub)">地形を読み込んで、投げる向きを計算しています…</div></div>';
   var ca=castAdvice(o,c,s), pf=(state.pref&&state.pref[s.id]&&state.pref[s.id].cast)||"";
-  var sel='<label class="castpref">投げられる海<select data-castpref="'+esc(s.id)+'">'+[["","地形から自動"],["inner","港内・湾内だけ"],["outer","外海側だけ"],["both","両方"]].map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===pf?' selected':'')+'>'+x[1]+'</option>'; }).join("")+'</select></label>';
+  var sel='<label class="castpref">投げられる海<select data-castpref="'+esc(s.id)+'">'+[["","自動(地図で判断)"],["inner","港内・湾内だけ"],["outer","外海側だけ"],["both","両方"]].map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===pf?' selected':'')+'>'+x[1]+'</option>'; }).join("")+'</select></label>';
+  /* 地図で判断した「外海側の向き」「港内・湾内側の向き」を言葉で出す */
+  function runs(test){ var out=[], i0=-1; for(var k=0;k<17;k++){ var i=k%16, ok=k<16&&test(o[i]); if(ok&&i0<0) i0=k; if((!ok||k===16)&&i0>=0){ out.push([i0,(k===16&&ok)?15:k-1]); i0=-1; } }
+    if(out.length>1&&out[0][0]===0&&out[out.length-1][1]===15){ var a=out.pop(); out[0]=[a[0]-16,out[0][1]]; }
+    return out.map(function(r){ var a=DIRS16[(r[0]+16)%16], b=DIRS16[(r[1]+16)%16]; return a===b?a:a+"〜"+b; }).join("・"); }
+  var outer=runs(function(v){return v>=1.5;}), inner=runs(function(v){return v>=0.3&&v<1.5;});
+  var sideTxt='<div class="castside"><b>この場所の海('+(pf?'自分で決めた向き':'地図の判断')+')</b>:'+
+    (pf==="inner"?'港内・湾内側 '+esc(inner||"—"):pf==="outer"?'外海側 '+esc(outer||"—"):'外海側 '+esc(outer||"なし")+' / 港内・湾内側 '+esc(inner||"なし"))+'</div>';
   var srcTxt=pf?'<span class="src">自分で決めた向きを使っています</span>':(o.geo?'<span class="src">細かい海岸線と堤防の線で測っています</span>':'<span class="src">おおまかな海岸線で測っています(堤防は入っていません。細かいデータを読み込み中か、この場所には無い)</span>');
-  return '<div class="cast">'+compassSvg(o,ca,c)+'<div class="castTxt"><span class="lbl">投げる向き</span>'+esc(ca.text)+'<div>'+sel+' '+srcTxt+'</div>'+(s.cast?'<br><span class="lbl">現地情報</span>'+esc(s.cast):'')+
+  return '<div class="cast">'+compassSvg(o,ca,c)+'<div class="castTxt"><span class="lbl">投げる向き</span>'+esc(ca.text)+sideTxt+'<div>'+sel+' '+srcTxt+'</div>'+(s.cast?'<br><span class="lbl">現地情報</span>'+esc(s.cast):'')+
     '<div class="castKey"><i class="sw" style="background:var(--buoy)"></i>おすすめの向き <i class="sw" style="background:var(--sea);opacity:.5"></i>海が開いている向き(長いほど沖まで開けている) <span>→ 風</span></div></div></div>';
 }
 function nearestPlace(ll){var b=null,bd=1e9;PLACES.forEach(function(p){var d=distKm(ll,{lat:p[1],lng:p[2]});if(d<bd){bd=d;b=p;}});return b?{name:b[0],lat:b[1],lng:b[2],dist:bd}:null;}
@@ -619,6 +627,17 @@ function genAuto(){
 /* ===== 釣果の記録 ===== */
 var logSpotId=null;
 function recItems(x){ if(x.items) return x.items; return x.count>0?[{kind:x.kind||"アオリイカ",count:x.count,size:x.max_g?x.max_g+"g":""}]:[]; }
+/* ポイントの海底と水深(記録から)。水深は「潮がいちばん引いた時」の値の真ん中をとる */
+function spotBottom(id,sp){
+  var w=0,sn=0,cl=0,n=0, foot=[], off=[], raw=[], feel={};
+  state.catches.forEach(function(x){ if(!(x.spot_id===id||(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.003&&distKm(x,sp)<0.15))) return;
+    var b=x.bottom; if(b){ n++; if(b.weed) w++; if(b.snag) sn++; if(b.clean) cl++; }
+    if(x.depth_base_m!=null) (x.depth_at==="off"?off:foot).push(x.depth_base_m); else if(x.depth_m!=null) raw.push(x.depth_m); if(x.depth_feel) feel[x.depth_feel]=(feel[x.depth_feel]||0)+1; });
+  function med(a){ if(!a.length) return null; a=a.slice().sort(function(p,q){return p-q;}); return a[Math.floor(a.length/2)]; }
+  var fk=Object.keys(feel).sort(function(a,b){return feel[b]-feel[a];})[0];
+  if(!n&&!foot.length&&!off.length&&!raw.length&&!fk) return null;
+  return {n:n,weed:n&&w/n>=0.3,snag:n&&sn/n>=0.3,clean:n&&cl/n>=0.5&&!w,foot:med(foot),off:med(off),raw:med(raw),feel:fk||null};
+}
 function logStats(id,sp){
   var m=METHODS[state.method], t=0,h=0,n=0, all={}, dirs={}, water={}, wind=[], dayT={}, dayH={};
   var atSp=function(x){ return x.spot_id===id||(sp&&x.lat!=null&&Math.abs(x.lat-sp.lat)<0.003&&distKm(x,sp)<0.15); };
@@ -802,6 +821,11 @@ function renderTrips(){
     return '<div class="triprow"><div class="num">'+fmtAt(t.start)+'〜'+fmtAt(t.end).split(" ")[1]+'</div><div><b>'+esc(t.spot_name||"")+'</b>'+(t.outing&&t.outing!==t.id?' <small>(移動して続き)</small>':'')+' '+fmtDur(new Date(t.end)-new Date(t.start))+' '+(t.total?'<span>釣果'+t.total+'('+esc(fishSummary(t.fish))+')</span>':'<span class="zero">ボウズ</span>')+(c?'<br><small>'+esc(c)+'</small>':'')+(t.memo?'<br><small>'+esc(t.memo)+'</small>':'')+'</div><button class="btn sm" data-trdel="'+esc(t.id)+'">削除</button></div>'; }).join("");
   Array.prototype.forEach.call(el.querySelectorAll("[data-trdel]"),function(b){ b.onclick=function(){ if(b.dataset.armed){ Store.deleteTrip(b.dataset.trdel).catch(function(){}); } else { b.dataset.armed="1"; b.textContent="もう一度押すと削除"; } }; });
 }
+/* 水深:着底までの秒数 ÷ エギの沈む速さ。その時の潮位(潮位表の基準面からの高さ)を差し引いて「潮がいちばん引いた時の水深」に直す */
+var SINK_RATE={normal:3,shallow:6,deep:2};
+function calcDepth(rec){ if(!rec.bottom||!(rec.bottom.weed||rec.bottom.snag||rec.bottom.clean)) delete rec.bottom;
+  if(!rec.sink_s){ delete rec.sink_s; return; } var d=rec.sink_s/(SINK_RATE[rec.egi_type]||3); rec.depth_m=Math.round(d*10)/10;
+  var tc=rec.cond&&rec.cond.tide_cm; if(tc!=null) rec.depth_base_m=Math.round((d-tc/100)*10)/10; }
 /* ===== 記録を直す:記録の画面を、その記録の中身を入れた状態で開く ===== */
 var editRec=null;
 function openEdit(id){
@@ -816,10 +840,13 @@ function openEdit(id){
   recItems(x).forEach(function(it){ addItem(it.kind); var d=box.lastElementChild; d.querySelector(".in").value=it.count; d.querySelector(".is").value=it.size||"";
     if(d.querySelector(".ik").value!==it.kind){ d.querySelector(".ik").value="__other"; d.querySelector(".io").hidden=false; d.querySelector(".io").value=it.kind; } });
   if(!recItems(x).length) document.getElementById("lgMsg").textContent="この記録はボウズです。釣れていたなら「+ 魚を追加」で足してください。";
+  document.getElementById("lgSink").value=x.sink_s||""; document.getElementById("lgEgiType").value=x.egi_type||"normal"; document.getElementById("lgDepthAt").value=x.depth_at||"foot"; document.getElementById("lgDepthFeel").value=x.depth_feel||"";
+  document.getElementById("lgWeed").checked=!!(x.bottom&&x.bottom.weed); document.getElementById("lgSnag").checked=!!(x.bottom&&x.bottom.snag); document.getElementById("lgClean").checked=!!(x.bottom&&x.bottom.clean);
   document.getElementById("lgTackle").value=x.tackle||""; document.getElementById("lgDir").value=x.cast_dir||""; document.getElementById("lgWater").value=x.water||""; document.getElementById("lgMemo").value=x.memo||"";
   if(x.photo) document.getElementById("lgPhotoMsg").textContent="写真あり(新しく選ぶと差し替えます)";
 }
-function closeLog(){ editRec=null; document.getElementById("logTitle").firstChild.textContent="釣果を記録 "; document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgPhotoSave").hidden=true; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
+function resetDepthForm(){ ["lgSink"].forEach(function(k){ document.getElementById(k).value=""; }); document.getElementById("lgDepthFeel").value=""; ["lgWeed","lgSnag","lgClean"].forEach(function(k){ document.getElementById(k).checked=false; }); }
+function closeLog(){ editRec=null; resetDepthForm(); document.getElementById("logTitle").firstChild.textContent="釣果を記録 "; document.getElementById("logSheet").hidden=true; logSpotId=null; logFree=null; pendingPhoto=null; document.getElementById("lgPhotoPrev").hidden=true; document.getElementById("lgPhotoMsg").textContent=""; document.getElementById("lgPhotoSave").hidden=true; document.getElementById("lgHereMsg").textContent=""; ["lgCam","lgPick"].forEach(function(k){ document.getElementById(k).value=""; }); }
 var logFree=null; /* 過去の釣果:ポイントを選ばずに開いたとき {picked:場所} */
 function curLogSpot(){ if(logFree) return logFree.picked; return allSpots().filter(function(x){return x.id===logSpotId;})[0]; }
 function openPast(){
@@ -863,7 +890,7 @@ function condAt(iso,s){
     if(day.sunrise){ if(Math.abs(h-hm2h(day.sunrise))<=1) out.mazume="朝マヅメ"; else if(Math.abs(h-hm2h(day.sunset))<=1) out.mazume="夕マヅメ"; } }
   if(state.tide&&state.tide.date===key&&state.tide.day){ var t=state.tide.day;
     var cv=tideCurve(t.hi.map(function(e){return {type:"満潮",time:e[0],cm:e[1]};}).concat(t.lo.map(function(e){return {type:"干潮",time:e[0],cm:e[1]};})));
-    if(cv){ var near=cv.events.some(function(e){return Math.abs(e.t-h)<0.67;}); out.tide_phase=near?"潮止まり前後":(cv.at(h+0.25)>cv.at(h-0.25)?"上げ潮":"下げ潮"); }
+    if(cv){ var near=cv.events.some(function(e){return Math.abs(e.t-h)<0.67;}); out.tide_phase=near?"潮止まり前後":(cv.at(h+0.25)>cv.at(h-0.25)?"上げ潮":"下げ潮"); out.tide_cm=Math.round(cv.at(h)); }
     if(state.station) out.tide_station=state.station.name; }
   var noon=new Date(Date.UTC(j.getUTCFullYear(),j.getUTCMonth(),j.getUTCDate(),3)); out.tide_name=tideNameFromAge(moonAge(noon));
   if(state.manual&&key===jstDate(0).key){ out.wind_dir=state.manual.dir; out.wind_ms=state.manual.ws; }
@@ -883,7 +910,8 @@ function saveLog(){
   var total=items.reduce(function(a,b){return a+b.count;},0);
   var rec={spot_id:s.id,spot_name:s.name,lat:s.lat,lng:s.lng,at:iso,method:document.getElementById("lgMethod").value||state.method,items:items,count:total,kind:items[0]?items[0].kind:"",
     tackle:document.getElementById("lgTackle").value.trim(),
-    cast_dir:document.getElementById("lgDir").value||null,water:document.getElementById("lgWater").value||null,memo:document.getElementById("lgMemo").value.trim(),cond:condAt(iso,s),createdAt:new Date().toISOString()};
+    cast_dir:document.getElementById("lgDir").value||null,sink_s:+document.getElementById("lgSink").value||null,egi_type:document.getElementById("lgEgiType").value,depth_at:document.getElementById("lgDepthAt").value,depth_feel:document.getElementById("lgDepthFeel").value||null,
+    bottom:{weed:document.getElementById("lgWeed").checked,snag:document.getElementById("lgSnag").checked,clean:document.getElementById("lgClean").checked},water:document.getElementById("lgWater").value||null,memo:document.getElementById("lgMemo").value.trim(),cond:condAt(iso,s),createdAt:new Date().toISOString()};
   var chain=Promise.resolve();
   if(s.newSpot&&!state.mine.some(function(m){return m.id===s.id;})) chain=Store.saveSpot(s.id,{name:s.name,note:"",lat:s.lat,lng:s.lng,createdAt:new Date().toISOString(),from_import:true});
   if(s.auto){ var keep={name:s.name,note:s.note||"",lat:s.lat,lng:s.lng,eging:s.eging,current:s.current,kind:s.kind,feat:s.feat,how:s.how,open:s.open||null,createdAt:new Date().toISOString(),from_auto:true};
@@ -899,6 +927,7 @@ function saveLog(){
     .then(function(c){ if(c&&(c.wind_ms!=null||c.tide_phase||c.sst_c!=null)) rec.cond=old?c:Object.assign({},rec.cond,c); }).catch(function(){}); });
   var ph=pendingPhoto; if(ph) rec.photo=true;
   var at=activeTrip(); if(!ed&&at&&new Date(iso)>=new Date(at.start)-36e5) rec.trip_id=at.id;
+  chain=chain.then(function(){ calcDepth(rec); });
   chain.then(function(){ return ed?Store.setCatch(ed.id,rec):Store.addCatch(rec); }).then(function(id){ if(ph) setTimeout(trimPhotos,3000); return id; }).then(function(id){ if(ph&&id) return Store.savePhoto(id,ph).catch(function(e){ console.warn(e); alertMsg("記録は保存しましたが、写真を保存できませんでした"); }); }).then(function(){ closeLog(); }).catch(function(e){ console.warn(e); msg.textContent="保存できませんでした。通信を確認して、もう一度押してください。"; })
     .then(function(){ document.getElementById("lgSave").disabled=false; });
 }
@@ -1035,7 +1064,7 @@ function renderLog0(){
   var ls=document.getElementById("logSum"); if(ls) ls.textContent="釣果の記録("+state.catches.length+"回)";
   var bySp={}; state.catches.forEach(function(x){ var k=x.spot_name||"?", o=bySp[k]=bySp[k]||{n:0,h:0,f:{}}; o.n++; var its=recItems(x); if(its.length) o.h++; its.forEach(function(it){ o.f[it.kind]=(o.f[it.kind]||0)+it.count; }); });
   var L=computeLearn(), lt="";
-  if(L){ var parts=[]; ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
+  if(L){ var parts=[]; ["rain","tide","wind","kind","temp","rough","time","moon","phase","shelter","river","water","wave","pres","sstt","season","day","enc","encwind","encwave","enctide","kindwind","bottom"].forEach(function(f){ Object.keys(L[f]||{}).forEach(function(b){ var a=L[f][b]; if(Math.abs(a)>=1) parts.push(b+(a>0?" +":" ")+a); }); });
     lt='<p><b>記録からの自動調整</b>('+esc(METHODS[state.method].name)+'・'+L.n+'回分'+(L.pool?'。うち自分 '+L.own+'回・みんな '+L.pool+'回':'')+'):'+(parts.length?esc(parts.join("、")):"まだ条件による差ははっきりしていません")+'</p>'; }
   else lt='<p><b>記録からの自動調整</b>:'+esc(METHODS[state.method].name)+'で、ボウズも含めて8回以上の記録がたまると始まります。釣り開始〜終了で残すと、ボウズの回も自然に入ります。</p>';
   var rs=document.getElementById("recSpots"); if(rs) rs.innerHTML=lt+'<b>場所ごと</b><br>'+Object.keys(bySp).sort(function(a,b){return bySp[b].n-bySp[a].n;}).map(function(k){ var o=bySp[k]; return esc(k)+':'+o.n+'回中'+o.h+'回釣れた'+(Object.keys(o.f).length?'('+esc(fishSummary(o.f))+')':''); }).join("<br>");
@@ -1222,7 +1251,7 @@ function render(){
   else { src.className="src manual"; src.textContent=state.wxErr?"天気予報を取得できませんでした("+state.wxErr+")。潮名と日の出入りは計算値です。風は「条件を自分で変える」から入れられます。":"天気予報を読み込んでいます…"; }
   document.getElementById("tideH").textContent="潮と時間帯"+(c.tide_station?"("+c.tide_station+"の潮位・目安)":"");
 
-  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,300); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id,s);return st?Object.assign({},s,{log:st}):s;});
+  var cand=inside().sort(function(a,b){return distKm(state.center,a)-distKm(state.center,b);}).slice(0,300); cand.forEach(ensureOpen); cand=cand.map(withOpen).map(function(s){var st=logStats(s.id,s), bt=spotBottom(s.id,s); if(bt) s=Object.assign({},s,{bottom:bt});return st?Object.assign({},s,{log:st}):s;});
   loadSpotWx(cand);
   var ranked=rankSpots(c,cand,state.center,radius());
   drawPins(ranked);
@@ -1236,7 +1265,8 @@ function render(){
   var top=ranked[0], ct=c.condFor?c.condFor(top.spot):c, wins=bestWindows(ct,top.spot,Math.max(state.offset===0?nowH():0,state.slot==="custom"?c.slotFrom:0),state.slot==="custom"?c.slotTo:24);
   var winHtml=wins.length?wins.map(function(w){return '<span class="chip'+(/マヅメ/.test(w.label)?' dusk':'')+'"><b class="num">'+h2hm(w.s)+'〜'+h2hm(w.e)+'</b>'+esc(w.label)+'</span>';}).join(""):'<span class="chip">今日はもう遅い時間です。明日を見てください</span>';
   pick.innerHTML='<div class="eyebrow">'+dayLabel(state.offset)+'の一押し'+(state.offset>=3?'<span style="font-weight:400">(3日以上先の風は、前日にもう一度確かめてください)</span>':'')+'</div>'+
-    '<div class="name">'+esc(top.spot.name)+'</div>'+
+    '<div class="name">'+esc(top.spot.name)+' <span class="pts'+(top.points<40?' low':'')+'">'+top.points+'pt</span></div>'+
+    (top.points<40?'<div class="warn" style="font-size:.85rem">この範囲の1位ですが、全体では'+top.points+'ポイント(100が最高)。今日はこのあたり自体の条件がいまいちです。</div>':'')+
     '<div class="meta">'+esc(top.spot.area||"自分で追加")+' ・ 中心から約'+top.dist.toFixed(1)+'km'+(fishLine(top.spot)?' ・ '+esc(fishLine(top.spot)):'')+'</div>'+
     '<div class="when">'+winHtml+'</div>'+(condLine(c,top.spot)?'<div class="fishlog">'+esc(condLine(c,top.spot))+'</div>':'')+
     top.warn.map(function(x){return '<div class="warn">注意:'+esc(x)+'</div>';}).join("")+
@@ -1247,8 +1277,8 @@ function render(){
   if(moreOpen!==null){ var me=document.querySelector('#pick details.more'); if(me) me.open=moreOpen; }
   var mx=ranked[0].score, mn=Math.min.apply(null,ranked.map(function(r){return r.score;}));
   var rowsHtml=ranked.map(function(r,i){
-    var pct=mx===mn?100:Math.round(25+75*(r.score-mn)/(mx-mn)), sub=(r.why.filter(function(x){return x!=="自分で追加したポイント";})[0]||"")+(r.warn[0]?" / "+r.warn[0]:"");
-    return '<div class="row" data-id="'+esc(r.spot.id)+'"><span class="pos">'+(i+1)+'</span><span class="nm">'+esc(r.spot.name)+'<small>'+esc(sub||r.spot.area||"")+' ・ '+r.dist.toFixed(1)+'km</small></span><span class="bar" aria-label="おすすめ度 '+pct+'%"><i style="width:'+pct+'%"></i></span></div>';
+    var pct=r.points, sub=(r.why.filter(function(x){return x!=="自分で追加したポイント";})[0]||"")+(r.warn[0]?" / "+r.warn[0]:"");
+    return '<div class="row" data-id="'+esc(r.spot.id)+'"><span class="pos">'+(i+1)+'</span><span class="nm">'+esc(r.spot.name)+'<small>'+esc(sub||r.spot.area||"")+' ・ '+r.dist.toFixed(1)+'km</small></span><span class="barw"><b class="ptn">'+pct+'pt</b><span class="bar" aria-label="全体で'+pct+'ポイント"><i style="width:'+Math.max(3,pct)+'%"></i></span></span></div>';
   });
   var RN=isWide()?10:5;
   document.getElementById("rank").innerHTML=rowsHtml.length>RN?rowsHtml.slice(0,RN).join("")+'<details class="outer"><summary>'+(RN+1)+'位以下を見る('+(rowsHtml.length-RN)+'か所)</summary>'+rowsHtml.slice(RN).join("")+'</details>':rowsHtml.join("");
@@ -1262,13 +1292,22 @@ function render(){
 
 function isWide(){ return window.matchMedia&&window.matchMedia('(min-width: 760px)').matches; }
 function spotHow(s,c){ return howFor(c,s); }
+/* 海底・水深の行。水深は「潮が引いた時」と、選んだ時間帯の潮位を足した「その時」の両方を出す */
+function bottomLine(s,c){ var b=s.bottom; if(!b) return "";
+  var parts=[]; if(b.weed) parts.push("藻場あり"); if(b.snag) parts.push("根あり"); if(b.clean) parts.push("砂泥");
+  var o=c&&c.condFor?c.condFor(s):c, now=null; if(o&&o.tide_events){ var cv=tideCurve(o.tide_events); if(cv&&o.slotFrom!=null) now=cv.at((o.slotFrom+Math.min(24,o.slotTo))/2)/100; }
+  function dp(v,lab){ return v==null?"":lab+":潮が引いた時 約"+Math.max(0,v).toFixed(1)+"m"+(now!=null?"(選んだ時間帯は約"+Math.max(0,v+now).toFixed(1)+"m)":""); }
+  [dp(b.foot,"足元"),dp(b.off,"投げた先")].forEach(function(x){ if(x) parts.push(x); });
+  if(b.foot==null&&b.off==null&&b.raw!=null) parts.push("測った時 約"+b.raw.toFixed(1)+"m(潮位が分からず、潮が引いた時には直せていない)");
+  if(b.foot==null&&b.off==null&&b.raw==null&&b.feel) parts.push({shallow:"浅め",mid:"水深ふつう",deep:"深め"}[b.feel]);
+  return parts.length?'<p class="fishlog">海底・水深(自分の記録から):'+esc(parts.join("・"))+'</p>':""; }
 function spotCard(s,isTop,inCircle,c){
   var d=distKm(state.center,s);
   var tags=[s.area?'<span class="tag">'+esc(s.area)+'</span>':'', fishLine(s)?'<span class="tag">'+esc(fishLine(s))+'</span>':'',
     
     (s.current&&s.current!=="normal")?'<span class="tag">潮が速い</span>':'', s.light?'<span class="tag">常夜灯あり</span>':'', s.moved?'<span class="tag">位置を直した</span>':'',s.auto?'<span class="tag">'+(s.beach?'砂浜(地図データ)':'自動候補')+'</span>':'',s.port?'<span class="tag">国の漁港データ</span>':'',s.osm?'<span class="tag">OpenStreetMap</span>':'',(isSandy(s)&&!s.beach)?'<span class="tag">砂地あり</span>':'',s.shared?'<span class="tag shr">'+esc(s.byName)+'さんが共有('+esc(s.groupName)+')</span>':''].join("");
   return '<details class="spot'+(isTop?' hl':'')+(inCircle?'':' outside')+'" id="sp-'+esc(s.id)+'"><summary><h3>'+esc(s.name)+'<span class="d num">中心から'+d.toFixed(1)+'km</span></h3></summary>'+'<div class="tags">'+tags+'</div>'+(inCircle&&condLine(c,s)?'<p class="fishlog">'+esc(condLine(c,s))+'</p>':'')+
-    (s.feat?'<p><span class="lbl">特徴</span>'+esc(s.feat)+'</p>':'')+(spotHow(s,c)?'<p><span class="lbl">'+esc(METHODS[state.method].name)+'の狙い方</span>'+esc(spotHow(s,c))+'</p>':'')+(s.log&&s.log.all&&Object.keys(s.log.all).length?'<p class="fishlog">ここで釣れた魚(自分の記録):'+esc(fishSummary(s.log.all))+'</p>':'')+(state.method!=='eging'&&s.fish&&!s.auto&&!s.mine?'<p class="fishlog">釣り情報に出ている魚:'+esc(s.fish.join("・"))+'</p>':'')+(s.note?'<p><span class="lbl">'+(s.mine?"メモ":"注意")+'</span>'+esc(s.note)+'</p>':'')+(inCircle?castBlock(s,c):'')+
+    (s.feat?'<p><span class="lbl">特徴</span>'+esc(s.feat)+'</p>':'')+(spotHow(s,c)?'<p><span class="lbl">'+esc(METHODS[state.method].name)+'の狙い方</span>'+esc(spotHow(s,c))+'</p>':'')+(s.log&&s.log.all&&Object.keys(s.log.all).length?'<p class="fishlog">ここで釣れた魚(自分の記録):'+esc(fishSummary(s.log.all))+'</p>':'')+bottomLine(s,c)+(state.method!=='eging'&&s.fish&&!s.auto&&!s.mine?'<p class="fishlog">釣り情報に出ている魚:'+esc(s.fish.join("・"))+'</p>':'')+(s.note?'<p><span class="lbl">'+(s.mine?"メモ":"注意")+'</span>'+esc(s.note)+'</p>':'')+(inCircle?castBlock(s,c):'')+
     '<div class="acts"><a href="https://www.google.com/maps/search/?api=1&query='+(s.q?encodeURIComponent(s.q):s.lat.toFixed(5)+","+s.lng.toFixed(5))+'" target="_blank" rel="noopener">地図アプリで開く</a>'+
     '<a href="https://maps.gsi.go.jp/#17/'+s.lat.toFixed(6)+'/'+s.lng.toFixed(6)+'/&base=std&ls=seamlessphoto&disp=1" target="_blank" rel="noopener">航空写真で海の中を見る</a>'+
     '<a href="https://www.msil.go.jp/msil/htm/main.html?Lang=0" target="_blank" rel="noopener">海しるで水深を見る</a>'+

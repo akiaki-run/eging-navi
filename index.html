@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="css/style.css?v=20261030l">
+<link rel="stylesheet" href="css/style.css?v=20261031c">
 </head>
 <body>
 <div class="wrap">
@@ -95,6 +95,7 @@
 
 <section>
   <h2>円の中の順位</h2>
+  <p class="src" style="margin:0 0 4px">バーと数字は全体で見たポイント(100が最高。場所・水温・潮・風が全部いちばん良いとき)。順位はこの範囲の中での順番です。</p>
   <div class="rank" id="rank"></div>
 </section>
 
@@ -203,6 +204,13 @@
         <div class="warn" id="lgPhotoWarn" hidden>ログインしていないので、写真はこの端末の中にだけ保存されます。あとでログインして「この端末の記録をアカウントへ移す」を押しても、写真は移りません。スマホとPCの両方で見たいときは、先に右上の「Googleでログイン」をしてください。</div>
         <div><a class="btn sm" id="lgPhotoSave" hidden>📥 元の写真をこのスマホに保存</a></div>
         <div><img id="lgPhotoPrev" alt="" hidden style="max-width:160px;max-height:120px;border-radius:8px;margin-top:4px"></div></div>
+      <div class="wide depthbox"><b>水深と海底(分かる分だけ)</b>
+        <div class="dbrow"><label>着底まで<input type="number" id="lgSink" min="1" max="200" inputmode="numeric" placeholder="秒"></label>
+          <label>エギ<select id="lgEgiType"><option value="normal">ノーマル(約3秒で1m)</option><option value="shallow">シャロー(約6秒で1m)</option><option value="deep">ディープ(約2秒で1m)</option></select></label>
+          <label>測った所<select id="lgDepthAt"><option value="foot">足元</option><option value="off">投げた先</option></select></label></div>
+        <div class="dbrow"><label>水深の感じ<select id="lgDepthFeel"><option value="">—</option><option value="shallow">浅い(〜3m)</option><option value="mid">ふつう</option><option value="deep">深い(10m〜)</option></select></label></div>
+        <div class="dbrow"><label class="ck"><input type="checkbox" id="lgWeed"> 海藻が付いた</label><label class="ck"><input type="checkbox" id="lgSnag"> 根掛かりした</label><label class="ck"><input type="checkbox" id="lgClean"> 何も付かずスルスル引けた</label></div>
+        <div class="src" id="lgDepthMsg">着底までの秒数を入れると、その時の潮位を差し引いて「潮がいちばん引いた時の水深」に直して記録します。</div></div>
       <label class="wide">メモ<input id="lgMemo" maxlength="200" placeholder="例:足元のかけあがりで食った"></label>
       <div class="act"><button class="btn pri" id="lgSave">記録する</button><button class="btn" id="lgCancel">やめる</button><span class="warn" id="lgMsg"></span></div>
     </div>
@@ -212,10 +220,10 @@
 
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="firebase-config.js?v=20261030l"></script>
-<script src="js/engine.js?v=20261030l"></script>
-<script src="js/wx.js?v=20261030l"></script>
-<script src="js/store.js?v=20261030l"></script>
-<script src="js/app.js?v=20261030l"></script>
+<script src="firebase-config.js?v=20261031c"></script>
+<script src="js/engine.js?v=20261031c"></script>
+<script src="js/wx.js?v=20261031c"></script>
+<script src="js/store.js?v=20261031c"></script>
+<script src="js/app.js?v=20261031c"></script>
 </body>
 </html>
