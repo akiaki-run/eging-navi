@@ -380,6 +380,23 @@ function initMap(){
   here.onAdd=function(){ var b=L.DomUtil.create("button","btn sm maphere"); b.type="button"; b.textContent="◎ 画面の真ん中で探す"; b.title="今見ている地図の真ん中を、円の中心にします";
     L.DomEvent.disableClickPropagation(b); b.onclick=function(){ var c=map.getCenter(); state.center={lat:c.lat,lng:c.lng}; ctrMarker.setLatLng(c); circle.setLatLng(c); areaChanged(); }; return b; };
   here.addTo(map);
+  /* 現在地ボタン:押すと今いる場所に青い点を出して地図を寄せる。もう一度押すと消す。範囲の中心は動かさない */
+  var me=L.control({position:"topleft"}), meLayer=L.layerGroup().addTo(map), meWatch=null, meFirst=true, meBtn=null;
+  function meStop(){ if(meWatch!=null&&navigator.geolocation) navigator.geolocation.clearWatch(meWatch); meWatch=null; meLayer.clearLayers(); if(meBtn) meBtn.classList.remove("on"); }
+  me.onAdd=function(){ var b=meBtn=L.DomUtil.create("button","btn sm maphere mebtn"); b.type="button"; b.textContent="📍 現在地"; b.title="今いる場所を地図に出します";
+    L.DomEvent.disableClickPropagation(b);
+    b.onclick=function(){ if(meWatch!=null){ meStop(); return; }
+      if(!navigator.geolocation){ alertMsg("この端末では位置情報が使えません"); return; }
+      b.classList.add("on"); meFirst=true; alertMsg("現在地を調べています…(許可を求められたら「許可」)",5000);
+      meWatch=navigator.geolocation.watchPosition(function(pos){ var ll=[pos.coords.latitude,pos.coords.longitude], acc=pos.coords.accuracy||0;
+        meLayer.clearLayers();
+        L.circle(ll,{radius:acc,color:"#1e88e5",weight:1,fillColor:"#1e88e5",fillOpacity:0.12,interactive:false}).addTo(meLayer);
+        L.circleMarker(ll,{radius:7,color:"#fff",weight:2.5,fillColor:"#1e88e5",fillOpacity:1,interactive:false}).addTo(meLayer);
+        if(meFirst){ meFirst=false; map.setView(ll,Math.max(map.getZoom(),15)); document.getElementById("toast").hidden=true; } },
+      function(e){ meStop(); alertMsg(e.code===1?"位置情報が許可されていません。ブラウザの設定で、このサイトの位置情報を「許可」にしてください。":"現在地を取れませんでした。もう一度押してください。",8000); },
+      {enableHighAccuracy:true,timeout:20000,maximumAge:10000}); };
+    return b; };
+  me.addTo(map);
   var mq=window.matchMedia("(prefers-color-scheme: dark)");
   function restyle(){ circle.setStyle({color:css("--ring"),fillColor:css("--ring")}); }
   if(mq.addEventListener) mq.addEventListener("change",restyle);
